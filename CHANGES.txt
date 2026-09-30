@@ -1,0 +1,56 @@
+CHANGES
+=======
+
+Newest entries first. Each entry: what changed, why, affected files, how it was verified.
+
+
+2026-09-30  EOM interaction prefactor, screening consistency, np.int crash
+--------------------------------------------------------------------------
+(committed as ebb4b75 on branch fix-eom-prefactors)
+
+1. Fixed electron-electron stiffness prefactor in the equations of motion
+   Files: quantum_electron/eom_solver.py (setup_eom, setup_eom_coupled_lc)
+   - The Hessian of the pairwise interaction phi(r) = A/r is
+     phi_xx = A/(2 r^3) * (1 + 3 cos 2theta); the 1/2 comes only from the
+     double-angle identity. The 1/2 used in Vee to avoid double counting
+     the energy cancels on differentiation (grad_Vee already uses 1).
+   - Commit a856ff9 fixed this for the Coulomb branch of setup_eom only.
+     The Yukawa branch of setup_eom and both branches of
+     setup_eom_coupled_lc still used 1/4, halving the interaction stiffness.
+   - Impact: mode frequencies / cavity shifts computed with screening on,
+     or with the coupled-LC model, were wrong. Symptoms for 2 electrons in
+     a parabolic trap: rotation mode at 0.707 f_com instead of 0, breathing
+     mode at sqrt(2) f_com instead of sqrt(3) f_com.
+
+2. Coulomb vs. Yukawa choice in the EOM now also honours include_screening
+   Files: quantum_electron/eom_solver.py
+   - Previously the EOM only checked screening_length == np.inf, while the
+     position solver checks include_screening. With include_screening=False
+     and a finite screening_length, positions used Coulomb but modes used
+     Yukawa. Now: Coulomb if (not include_screening) or length is inf.
+
+3. Fixed crash in parallel_perturb_and_solve on NumPy >= 1.24
+   Files: quantum_electron/position_solver.py
+   - np.int -> int in single_thread (np.int was removed from NumPy).
+   - multiprocessing.Pool is now used as a context manager so it is closed.
+
+4. Added regression tests
+   Files: tests/test_eom.py (new)
+   - Checks the analytic 2-electron spectrum (0, f_com, f_com,
+     sqrt(3) f_com) for setup_eom and setup_eom_coupled_lc (Ltail = 0 and
+     1 nH), for Coulomb and for Yukawa with a very long screening length.
+
+Verification: full pytest suite passes (26 tests) in conda env fem2
+(NumPy 2.4.2). parallel_perturb_and_solve smoke-tested with 6 electrons.
+
+
+Known issues (not yet fixed)
+----------------------------
+- position_solver.calculate_metrics: with periodic boundaries in both x
+  and y, the x branch recomputes Rij from Rij_standard and discards the
+  y-shifted minimum.
+- electron_counter.get_electron_positions: out-of-domain diagnostic
+  compares |y| against x_max.
+- FullModel default remove_bounds uses the x-range for y as well.
+- FullModel.get_dot_area keeps only the last contour when several exist.
+- setup.py does not declare numpy, scipy, matplotlib as dependencies.
