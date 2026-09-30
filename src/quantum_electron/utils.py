@@ -22,12 +22,12 @@ def select_outer_electrons(xi: ArrayLike, yi: ArrayLike, plot: bool = True, **kw
     useful for calculating the area of an ensemble.
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
         plot (bool, optional): Plot the polygon. Defaults to True.
 
     Returns:
-        tuple: Polygon points (x and y), polygon area
+        tuple: [microns] Polygon points (x and y), and polygon area [microns^2]. Note that the input is in meters.
     """
     try:
         import pyvista
@@ -73,8 +73,8 @@ def density_from_positions(xi: ArrayLike, yi: ArrayLike) -> float:
     """Electron density estimate calculated from the nearest neighbor distance
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
 
     Returns:
         float: Electron density in units of m^-2
@@ -97,8 +97,8 @@ def mean_electron_spacing(xi: ArrayLike, yi: ArrayLike) -> float:
     """Mean electron spacing calculated from the nearest neighbor distance
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
 
     Returns:
         float: Mean electron spacing in units of m
@@ -122,8 +122,8 @@ def gamma_parameter(xi: ArrayLike, yi: ArrayLike, T: float) -> float:
     For values below the critical value we have a liquid.
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
         T (float): Temperature
 
     Returns:
@@ -257,10 +257,10 @@ class PotentialVisualization:
         Args:
             electrode1 (str): Electrode name
             electrode2 (str): Electrode name, may be None. If None, only the coupling constant of electrode 1 is plotted.
-            loc (tuple, optional): Location where the ratio electrode1/electrode2 is evaluated. Defaults to (-1, 0).
+            loc (tuple, optional): [microns] Location where the ratio electrode1/electrode2 is evaluated. Defaults to (-1, 0).
             ax (_type_, optional): Matplotlib axes instance. If None, a new instance will be created. Defaults to None.
-            coor (Optional[List[float]], optional): Center for the 2D plot in units of microns. Defaults to [0, 0].
-            dxdy (List[float], optional): Extent (dx, dy) of the 2D plot in units of microns. Defaults to [1, 2].
+            coor (Optional[List[float]], optional): [microns] Center for the 2D plot. Defaults to [0, 0].
+            dxdy (List[float], optional): [microns] Extent (dx, dy) of the 2D plot. Defaults to [1, 2].
             figsize (tuple[float, float], optional): Matplotlib figure size in inches. Defaults to (7, 4).
             show_minimum (bool, optional): If True, it plots a star where the ratio is smallest. Defaults to True.
             contour_levels (ArrayLike, optional): Contour levels, must be a list. Defaults to [].
@@ -323,9 +323,9 @@ class PotentialVisualization:
         respective electrode. It also returns the values of the coupling constants at the location loc = (x, y) in a dictionary.
 
         Args:
-            loc (tuple, optional): Location to evaluate the coupling constants at (x, y) in micron. Defaults to (-1, 0).
-            plot_coor (tuple, optional): Center for each of the 2D plots. Defaults to (0, 0).
-            plot_dxdy (tuple, optional): Extent (width and height) in microns for each of the 2D plots. Defaults to (3., 2.).
+            loc (tuple, optional): [microns] Location to evaluate the coupling constants at (x, y). Defaults to (-1, 0).
+            plot_coor (tuple, optional): [microns] Center for each of the 2D plots. Defaults to (0, 0).
+            plot_dxdy (tuple, optional): [microns] Extent (width and height) for each of the 2D plots. Defaults to (3., 2.).
             clim (tuple, optional): Colorbar limits for each of the 2D plots. Defaults to (0, 1).
 
         Returns:
@@ -385,8 +385,8 @@ class PotentialVisualization:
 
         Args:
             ax (_type_, optional): Matplotlib axes object. If None, a new instance will be created. Defaults to None.
-            x (ArrayLike, optional): x values for the potential slice. Must be at least of length 1. Defaults to [].
-            y (ArrayLike, optional): y values for the potential slice. Must be at least of length 1. Defaults to [].
+            x (ArrayLike, optional): [microns] x values for the potential slice. Must be at least of length 1. Defaults to [].
+            y (ArrayLike, optional): [microns] y values for the potential slice. Must be at least of length 1. Defaults to [].
             axlims (Optional[tuple], optional): Limits in eV of the vertical axis of the plot. Defaults to None.
             figsize (tuple[float, float], optional): Figure size in inches. Defaults to (6, 3).
             print_voltages (bool, optional): Prints the voltages for each potential next to the plot. Defaults to True.
@@ -456,8 +456,8 @@ class PotentialVisualization:
         """Plot the potential energy as function of (x,y)
 
         Args:
-            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
-            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            coor (List[float, float], optional): [microns] Center of the solution window, this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): [microns] width of the solution window for x and y. Defaults to [1, 2].
             figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
         """
 

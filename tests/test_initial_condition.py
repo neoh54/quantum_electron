@@ -64,3 +64,27 @@ def test_random_particles_as_initial_condition():
     res = fm.get_electron_positions(n_electrons=5, electron_initial_positions=r)
     assert res['success']
     assert np.all(np.abs(res['x']) < 1 * um)
+
+
+def test_generate_initial_condition_radius_um():
+    """radius_um (microns) replaces the deprecated radius (meters); both give the same result."""
+    fm = FullModel(make_ic().potential_dict, {"dot": 1.0}, trap_annealing_steps=[])
+
+    r_um = fm.generate_initial_condition(6, radius_um=0.3, center=(0.5, -0.5))
+    x, y = r2xy(r_um)
+    assert np.allclose(np.hypot(x - 0.5 * um, y + 0.5 * um), 0.3 * um)
+
+    with pytest.warns(DeprecationWarning, match="radius_um"):
+        r_m = fm.generate_initial_condition(6, radius=0.3e-6, center=(0.5, -0.5))
+    assert np.allclose(r_m, r_um)
+
+    # Positional use of the old argument still works (and warns)
+    with pytest.warns(DeprecationWarning):
+        assert np.allclose(fm.generate_initial_condition(6, 0.3e-6, (0.5, -0.5)), r_um)
+
+    # Default: 0.18 microns around the potential minimum (the origin here)
+    x, y = r2xy(fm.generate_initial_condition(6))
+    assert np.allclose(np.hypot(x, y), 0.18 * um)
+
+    with pytest.raises(TypeError):
+        fm.generate_initial_condition(6, radius=0.3e-6, radius_um=0.3)

@@ -159,8 +159,8 @@ class PositionSolver:
         This function is called in the case of periodic boundary conditions in the y direction.
 
         Args:
-            y (ArrayLike): 1D array of electron positions (y-coordinate)
-            xbounds (Optional[tuple], optional): y-domain boundaries. Defaults to None, in which case (self.y_min, self.y_max) is used.
+            y (ArrayLike): [m] 1D array of electron positions (y-coordinate)
+            ybounds (Optional[tuple], optional): [m] y-domain boundaries. Defaults to None, in which case (self.y_min, self.y_max) is used.
 
         Returns:
             ArrayLike: 1D array of electron positions (y-coordinate) mapped into the solution domain.
@@ -174,8 +174,8 @@ class PositionSolver:
         This function is called in the case of periodic boundary conditions in the x-domain.
 
         Args:
-            x (ArrayLike): 1D array of electron positions (x-coordinate)
-            xbounds (Optional[tuple], optional): x-domain boundaries. Defaults to None, in which case (self.x_min, self.x_max) is used.
+            x (ArrayLike): [m] 1D array of electron positions (x-coordinate)
+            xbounds (Optional[tuple], optional): [m] x-domain boundaries. Defaults to None, in which case (self.x_min, self.x_max) is used.
 
         Returns:
             ArrayLike: 1D array of electron positions (x-coordinate) mapped into the solution domain.
@@ -191,8 +191,8 @@ class PositionSolver:
         wrapping each direction independently yields the shortest ri-rj, which is used to evaluate the electron-electron energy.
 
         Args:
-            xi (ArrayLike): 1D array of electron positions (x-coordinate)
-            yi (ArrayLike): 1D array of electron positions (y-coordinate)
+            xi (ArrayLike): [m] 1D array of electron positions (x-coordinate)
+            yi (ArrayLike): [m] 1D array of electron positions (y-coordinate)
 
         Returns:
             tuple: Three pairwise distance metrics (2D arrays): xi-xj, yi-yj, ri-rj
@@ -219,8 +219,8 @@ class PositionSolver:
         """Returns the electrostatic potential at the coordinates xi, yi.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: Electrostatic energy at coordinates xi, yi in units of electronvolts.
@@ -238,8 +238,8 @@ class PositionSolver:
         the sum of the static energy of the n particles in the potential.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             float: Total electrostatic energy of the system in units of Joules.
@@ -256,8 +256,8 @@ class PositionSolver:
         np.sum(Vee(xi, yi)) gives the total interaction energy of the system (without double counting).
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
             eps (float, optional): _description_. Defaults to 1E-15.
 
         Returns:
@@ -290,7 +290,7 @@ class PositionSolver:
         The x-coordinates are thus given by the even elements of r: r[::2], whereas the y-coordinates are the odd ones: r[1::2]
 
         Args:
-            r (ArrayLike): r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
+            r (ArrayLike): [m] r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
 
         Returns:
             float: Scalar with the total energy of the system in units of electron volts.
@@ -311,8 +311,8 @@ class PositionSolver:
         """Calculate the derivative of the electrostatic potential in the x-direction.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: First derivative of the electrostatic potential in the x-direction.
@@ -328,8 +328,8 @@ class PositionSolver:
         This is used as input for the EOMSolver class (curv_xx)
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: Second derivative of the electrostatic potential in the x-direction.
@@ -344,8 +344,8 @@ class PositionSolver:
         """Calculate the derivative of the electrostatic potential in the y-direction.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: First derivative of the electrostatic potential in the y-direction.
@@ -361,8 +361,8 @@ class PositionSolver:
         This is used as input for the EOMSolver class (curv_yy)
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: Second derivative of the electrostatic potential in the y-direction.
@@ -378,8 +378,8 @@ class PositionSolver:
         This is used as input for the EOMSolver class (curv_xy)
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array or float
 
         Returns:
             ArrayLike: Cross derivative of the electrostatic potential in the x and y directions.
@@ -395,8 +395,8 @@ class PositionSolver:
         """Derivative of the electron-electron interaction term
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
             eps (float, optional): A small but non-zero number to avoid triggering Warning message. Exact value is irrelevant. Defaults to 1E-15.
 
         Returns:
@@ -447,7 +447,7 @@ class PositionSolver:
          the scipy minimizer, which typically helps to converge to the ground state faster.
 
         Args:
-            r (ArrayLike): r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
+            r (ArrayLike): [m] r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
 
         Returns:
             float: 1D array of length len(r), where grad_total = np.array([dV/dx|r0, dV/dy|r0, ...])
@@ -545,8 +545,8 @@ class PositionSolver:
             N_perturbations (int): Number of allowed perturbations to find a new minimum
             T (float): Temperature to perturb the system at. This is used to convert to a motion.
             solution_data_reference (dict): Output of scipy.optimize.minimize
-            maximum_dx (Optional[float], optional): Maximum perturbation in the x-direction units of meters. Defaults to None.
-            maximum_dy (Optional[float], optional): Maximum perturbation in the y-direction units of meters. . Defaults to None.
+            maximum_dx (Optional[float], optional): [m] Maximum perturbation in the x-direction. Defaults to None.
+            maximum_dy (Optional[float], optional): [m] Maximum perturbation in the y-direction. Defaults to None.
             do_print (bool, optional): Print the status of the trials. Defaults to True.
 
         Returns:

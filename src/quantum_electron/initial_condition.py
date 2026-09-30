@@ -1,9 +1,11 @@
 import numpy as np
+import warnings
 from shapely import Polygon
 from shapely.geometry import Point
 from shapely.prepared import prep
 from .utils import xy2r, make_potential, find_minimum_location
 from .coupling_constants import CouplingConstants, to_potential_dict
+from .exceptions import QuantumElectronWarning
 from typing import Optional, Dict, Union
 from numpy.typing import ArrayLike
 
@@ -44,7 +46,7 @@ class InitialCondition:
         Args:
             max_electrons (int): The maximum number of electrons that will be attempted to fit into the designated area.
             chemical_potential (float): The chemical potential for the electrons. This will be used to determine the area to be filled.
-            min_spacing (float, optional): Minimum spacing between electrons. Defaults to 0.1.
+            min_spacing (float, optional): [microns] Minimum spacing between electrons. Defaults to 0.1.
 
         Returns:
             ArrayLike: array of electron positions in the order np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
@@ -63,8 +65,8 @@ class InitialCondition:
 
         Args:
             n_electrons (int): Number of electrons to be generated.
-            coor (Optional[tuple], optional): Center of the circular pattern. Defaults to None.
-            min_spacing (float, optional): Minimum spacing between electrons. Defaults to 0.1.
+            coor (Optional[tuple], optional): [microns] Center of the circular pattern. Defaults to None.
+            min_spacing (float, optional): [microns] Minimum spacing between electrons. Defaults to 0.1.
 
         Returns:
             ArrayLike: array of electron positions in the order np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
@@ -89,8 +91,8 @@ class InitialCondition:
 
         Args:
             n_electrons (int): Number of electrons to be generated.
-            coor (tuple, optional): Center coordinate of the rectangle. Defaults to (0, 0).
-            dxdy (tuple, optional): Width and height of the rectangle. Defaults to (2, 2).
+            coor (tuple, optional): [microns] Center coordinate of the rectangle. Defaults to (0, 0).
+            dxdy (tuple, optional): [microns] Width and height of the rectangle. Defaults to (2, 2).
             n_rows (int, optional): Number of rows. Defaults to 2.
 
         Returns:
@@ -116,9 +118,9 @@ class InitialCondition:
         (Poisson-disk-like via rejection sampling).
 
         Args:
-            polygon (Polygon): shapely Polygon of the area to fill, with coordinates in microns.
+            polygon (Polygon): [microns] shapely Polygon of the area to fill.
             n (int): Number of electrons to be generated.
-            min_dist (float): Minimum spacing between electrons in microns.
+            min_dist (float): [microns] Minimum spacing between electrons.
             rng (optional): Seed or numpy random Generator, passed to np.random.default_rng. Defaults to None.
             max_tries (int, optional): Maximum number of trial points before giving up. Defaults to 100_000.
             keep_off_boundary (bool, optional): Also keep electrons >= min_dist/2 from the polygon edge. Defaults to False.
@@ -253,7 +255,7 @@ class InitialCondition:
             dot_min (float): Minimum value of the potential inside the dot area.
             dot_max (float): Maximum value of the potential inside the dot area.
             epsilon (float): Minimum spacing between electrons.
-            verbose (bool, optional): Prints a warning is not all electrons fit inside the dot. Defaults to True.
+            verbose (bool, optional): Issues a QuantumElectronWarning if not all electrons fit inside the dot. Defaults to True.
 
         Returns:
             ArrayLike: 2d array of points, the first column is the x coordinates, the second column the y coordinates.
@@ -275,7 +277,7 @@ class InitialCondition:
                 failures += 1
 
         if (failures == max_failures) and verbose:
-            print(
-                f'WARNING in creating initial condition: could not fit more than {len(points)} electrons.')
+            warnings.warn(f'Could not fit more than {len(points)} of {max_electrons} electrons in the initial condition.',
+                          QuantumElectronWarning, stacklevel=3)
 
         return np.array(points)

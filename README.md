@@ -80,6 +80,24 @@ options = {"include_screening" : True, # Include screening of electron-electron 
            "max_y_displacement" : 0.1e-6} # Maximum y-displacement of solved electron positions during annealing.
 ```
 
+## Units
+Lengths follow one rule:
+- **Meters (SI)** for electron coordinates and everything that is compared to them: electron positions `r = [x0, y0, x1, y1, ...]` (including the initial condition and `res['x']` returned by `get_electron_positions`), `remove_bounds`, `max_x_displacement` / `max_y_displacement`, the bounds of `count_electrons_in_dot`, and the `amplitude` of eigenvector animations. Energies are in eV, gradients in eV/m.
+- **Microns** for everything that refers to the potential map or a plot window: `xlist` / `ylist` (and the `x`, `y` of a `CouplingConstants` object), `coor`, `dxdy`, `loc`, `center`, `barrier_location`, and the shapes and spacings passed to `InitialCondition` (`coor`, `dxdy`, `min_spacing`, `polygon`, `min_dist`).
+
+In the docstrings, every length argument is tagged with its unit, `[m]` or `[microns]`. Arguments that end in `_um` are in microns. For example, `generate_initial_condition(n, radius_um=0.2, center=(0, 0))` places `n` electrons on a circle of radius 0.2 microns around (0, 0) microns; the older `radius` argument (in meters) still works but is deprecated.
+
+## Warnings
+Problems during a calculation are reported as Python warnings rather than printed messages: a `ConvergenceWarning` if the minimization did not converge, and a `QuantumElectronWarning` (the base class) for e.g. removed or out-of-domain electrons. They can be filtered with the standard `warnings` module, for example in a voltage sweep:
+```
+import warnings
+from quantum_electron import ConvergenceWarning, QuantumElectronWarning
+
+warnings.simplefilter("ignore", QuantumElectronWarning)  # silence all quantum_electron warnings
+warnings.simplefilter("error", ConvergenceWarning)       # or: raise an exception when a minimization does not converge
+```
+`get_electron_positions(..., suppress_warnings=True)` silences them for a single call.
+
 ## Tips for the initial condition
 The initial condition can affect the final minimization result quite strongly. We encourage you to take a look at the example notebook about initial conditions. If there are issues with convergence you can first check convergence with `f.plot_convergence()`. A good final value for the cost function is ~1-500 eV/m. If the lowest value of the cost function is signifantly higher than this, or if warnings appear, here are some rules of thumb for successful convergence:
 1. Don't create an initial condition where too many electrons are placed in a small area.
@@ -101,6 +119,6 @@ By default `pytest` skips tests marked as slow (`tests/test_performance.py`). Ru
 If you found this module useful in your research, please consider citing this code in your publication using a hyperlink.
 
 ## To-do list
-- [ ] Standardize units of the arguments. Sometimes it is unclear whether to use microns or meters.
+- [ ] Standardize units of the arguments. The current convention is documented in the Units section, but a single unit for all arguments would be a breaking change (e.g. for a 1.0 release).
 - [ ] Figure out how to handle warning messages for convergence issues. Why do problems sometimes have a hard time converging?
 - [x] Split off the Schrodinger solver. It has been removed; this package now only does classical calculations.

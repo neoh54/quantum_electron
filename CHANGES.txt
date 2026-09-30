@@ -4,6 +4,102 @@ CHANGES
 Newest entries first. Each entry: what changed, why, affected files, how it was verified.
 
 
+2026-09-30  Units: documented convention, radius_um
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Documented the unit convention
+   - Meters (SI) for electron coordinates and everything compared to them
+     (r / res['x'], initial conditions, remove_bounds, max_x/y_displacement,
+     count_electrons_in_dot bounds, animation amplitude); microns for the
+     potential map and plot windows (xlist/ylist, CouplingConstants x/y,
+     coor, dxdy, loc, center, barrier_location, InitialCondition shapes and
+     spacings). This is what the code already did, apart from item 2.
+   - README: new "Units" section; the to-do item now points to it.
+   - Docstrings: every length argument of the public API is tagged [m] or
+     [microns] (about 80 argument lines in eom_solver, full_model,
+     initial_condition, position_solver, utils). Each unit was checked
+     against the code (e.g. plot_potential_slice x/y and get_dot_area
+     barrier_location are compared to xlist -> microns; map_x_into_domain
+     bounds are compared to the grid in meters -> m), not inferred from the
+     argument name. Older unit phrases made redundant by the tag removed.
+   - Return values: get_electron_positions ('x' [m], 'jac' [eV/m], 'fun'
+     [eV]); select_outer_electrons returns microns / microns^2 although its
+     input is in meters (now stated).
+   - Docstring fixes found on the way: map_y_into_domain documented its
+     argument as xbounds (is ybounds); Ey_up/Ey_down said "where Ex should
+     be evaluated".
+
+2. generate_initial_condition: radius_um replaces radius
+   Files: src/quantum_electron/full_model.py
+   - It was the only call mixing units: center in microns, radius in meters
+     (default 0.18e-6). New keyword radius_um (microns, default 0.18).
+   - radius (meters) still works, positionally or by keyword, and issues a
+     DeprecationWarning; passing both raises TypeError. Results identical.
+   - Docstring now documents center and radius (they were missing).
+   - examples/01_square_well: radius=0.2e-6 -> radius_um=0.2.
+
+3. Tests: tests/test_initial_condition.py
+   - radius_um geometry, deprecated keyword and positional radius give the
+     same result and warn, default radius, TypeError for both.
+
+Verification: fem2, 51 passed, 1 deselected; ruff blocking checks pass.
+
+
+2026-09-30  Warnings instead of printed messages
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. New module src/quantum_electron/exceptions.py
+   - QuantumElectronWarning(UserWarning): base class for the package.
+   - ConvergenceWarning(QuantumElectronWarning): minimization did not
+     converge.
+   - Both exported from quantum_electron. Filter with the warnings module,
+     e.g. warnings.simplefilter("ignore", QuantumElectronWarning) or
+     warnings.simplefilter("error", ConvergenceWarning).
+
+2. Problem reports now use warnings.warn (stacklevel points at the caller)
+   - FullModel.get_electron_positions: initial condition does not match
+     n_electrons; unbound electrons removed; electrons outside the domain
+     (one warning listing all coordinates); initial minimization did not
+     converge (ConvergenceWarning, now includes scipy's message).
+   - InitialCondition.make_by_chemical_potential: could not fit all
+     electrons.
+   - suppress_warnings keeps working (no warnings issued); docstring updated.
+   - Progress output behind verbose / do_print (convergence monitor,
+     annealing messages) and package_versions() are still printed.
+     "Restart minimization!" is now printed only with verbose=True.
+
+3. Bugs fixed along the way (all in get_electron_positions unless noted)
+   - With suppress_warnings=True and remove_unbound_electrons=True, the
+     minimization was never restarted after removing unbound electrons:
+     the removal message and the restart decision shared one `if`, so
+     silencing messages changed the result. Confirmed on the previous code
+     (minimize called with [3] electrons instead of [3, 2]).
+   - verbose=True printed "SUCCESS: Initial minimization for Trap
+     converged!" even when it had not converged.
+   - The reported "L-inf norm of gradient" was np.amax(jac), ignoring large
+     negative components; now np.max(np.abs(jac)).
+   - no_electrons_left is initialized before the loop (it was only defined
+     inside it; worked only via short-circuit evaluation).
+   - EOMSolver.setup_eom_coupled_lc: an unknown resonator_dict['mode'] only
+     printed a message and continued, leaving self.f0 unset or stale from a
+     previous call, so get_cavity_frequency_shift could silently return a
+     wrong shift. Now raises ValueError before any computation.
+
+4. README: new "Warnings" section.
+
+5. Tests: tests/test_warnings.py (new)
+   - ConvergenceWarning (forced with a 1-iteration minimizer), silenced by
+     suppress_warnings, turned into an error by a filter.
+   - Initial condition / n_electrons mismatch; could not fit all electrons.
+   - Unbound removal restarts the minimization independent of
+     suppress_warnings (deterministic fake minimizer, counts the calls).
+   - Invalid resonator mode raises ValueError.
+
+Verification: fem2, 50 passed, 1 deselected.
+
+
 2026-09-30  Rename electron_counter -> full_model; CI with uv, ruff, Python matrix
 --------------------------------------------------------------------------
 (uncommitted)

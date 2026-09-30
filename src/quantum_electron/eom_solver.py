@@ -74,7 +74,7 @@ class EOMSolver:
         https://journals.aps.org/prapplied/abstract/10.1103/PhysRevApplied.23.024001
 
         Args:
-            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            ri (ArrayLike): [m] Electron positions, in the form [x0, y0, x1, y1, ...]
             resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have La, Lb, Ca, Cb, Cdot, mode. Ltail is optional.
             Here La, Ca are the inductance and capacitance of the first resonator, Lb, Cb are the inductance and capacitance of the second resonator.
             Cdot is the coupling capacitance between the two resonators. The mode key sets the f0 parameter and is used in get_cavity_frequency_shift.
@@ -82,6 +82,9 @@ class EOMSolver:
         Returns:
             tuple[ArrayLike]: (kinetic matrix K aka [L], and mass matrix M aka [C]^-1) OR if Ltail is nonzero ([L]^-1 [C]^-1)
         """
+        if resonator_dict['mode'] not in ['comm', 'diff']:
+            raise ValueError(f"resonator_dict['mode'] = {resonator_dict['mode']!r} was not understood. Please specify either 'comm' or 'diff'.")
+
         Ca = resonator_dict['Ca']
         Cb = resonator_dict['Cb']
         Cdot = resonator_dict['Cdot']
@@ -130,11 +133,8 @@ class EOMSolver:
 
         if resonator_dict['mode'] == 'comm':
             self.f0 = self.f0_comm
-        elif resonator_dict['mode'] == 'diff':
-            self.f0 = self.f0_diff
         else:
-            print(
-                "'mode' key was not understood. Please specify either 'comm' or 'diff'.")
+            self.f0 = self.f0_diff
 
         num_electrons = int(len(ri) / 2)
         xe, ye = r2xy(ri)
@@ -237,7 +237,7 @@ class EOMSolver:
         plates of the capacitor C.
 
         Args:
-            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            ri (ArrayLike): [m] Electron positions, in the form [x0, y0, x1, y1, ...]
             resonator_dict (Dict): Dictionary containing the parameters of the resonator. If supplied, it must have f0, Z0 as keys.
             f0 is the frequency of the resonator, and Z0 is the impedance of the resonator.
 
@@ -406,9 +406,9 @@ class EOMSolver:
         """Plots the eigenvector at the electron positions.
 
         Args:
-            electron_positions (ArrayLike): Electron position array in length 2 * n_electrons. The order should be [x0, y0, x1, y1, ...]
+            electron_positions (ArrayLike): [m] Electron position array in length 2 * n_electrons. The order should be [x0, y0, x1, y1, ...]
             eigenvector (ArrayLike): Eigenvector to be plotted. Length should be 2 * n_electrons + 1, as a column output by solve_eom.
-            length (float, optional): Length of the eigenvector in units of microns. Defaults to 0.5.
+            length (float, optional): [microns] Length of the eigenvector. Defaults to 0.5.
             color (str, optional): Face color of the arrow. Defaults to 'k'.
         """
         e_x, e_y = r2xy(electron_positions)
@@ -452,8 +452,8 @@ class EOMSolver:
             fig (matplotlib.pyplot.figure): Matplotlib figure handle.
             axs_list (matplotlib.pyplot.axes): List of axes, e.g. for subplots.
             eigenvector_list (List[ArrayLike]): Eigenvector array. eigenvector_list[0] will be plot on axs_list[0] etc.
-            electron_positions (ArrayLike): Electron coordinates in the format [x0, y0, x1, y1, ...]
-            amplitude (float, optional): Amplitude of the motion in units of meters. Defaults to 0.5e-6.
+            electron_positions (ArrayLike): [m] Electron coordinates in the format [x0, y0, x1, y1, ...]
+            amplitude (float, optional): [m] Amplitude of the motion. Defaults to 0.5e-6.
             time_points (int, optional): Number of frames for one cycle (oscillation period). Defaults to 31.
             frame_interval_ms (int, optional): Interval between frames in milliseconds. Defaults to 10.
 
