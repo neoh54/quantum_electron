@@ -1,6 +1,10 @@
 import numpy as np
+from shapely import Polygon
+from shapely.geometry import Point
+from shapely.prepared import prep
 from .utils import xy2r, make_potential, find_minimum_location
-from typing import Optional, Dict
+from .coupling_constants import CouplingConstants, to_potential_dict
+from typing import Optional, Dict, Union
 from numpy.typing import ArrayLike
 
 micron = 1e-6
@@ -18,16 +22,17 @@ class InitialCondition:
     f.get_electron_positions(n_electrons=len(init_cond) // 2, initial_condition=init_cond)
     """
 
-    def __init__(self, potential_dict: Dict[str, ArrayLike], voltage_dict: Dict[str, ArrayLike]):
+    def __init__(self, potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltage_dict: Dict[str, ArrayLike]):
         """Initializes the InitialCondition class.
 
         Args:
-            potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
+            potential_dict (Union[Dict[str, ArrayLike], CouplingConstants]): Dictionary containing at least the keys also present in the voltages dictionary.
             The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+            Alternatively, a CouplingConstants object (from quantum_electron or zeroheliumkit) with attributes x, y and data.
             voltage_dict (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
             applied to each electrode
         """
-        self.potential_dict = potential_dict
+        self.potential_dict = to_potential_dict(potential_dict)
         self.voltage_dict = voltage_dict
 
     def make_by_chemical_potential(self, max_electrons: int, chemical_potential: float, min_spacing: float = 0.1) -> ArrayLike:
@@ -104,6 +109,49 @@ class InitialCondition:
         init_condition = xy2r(init_x, init_y)
 
         return init_condition
+
+    def random_particles(self, polygon: Polygon, n: int, min_dist: float, rng=None, max_tries: int = 100_000,
+                         keep_off_boundary: bool = False) -> ArrayLike:
+        """Randomly place n electrons inside `polygon` such that every pair is at least `min_dist` apart
+        (Poisson-disk-like via rejection sampling).
+
+        Args:
+            polygon (Polygon): shapely Polygon of the area to fill, with coordinates in microns.
+            n (int): Number of electrons to be generated.
+            min_dist (float): Minimum spacing between electrons in microns.
+            rng (optional): Seed or numpy random Generator, passed to np.random.default_rng. Defaults to None.
+            max_tries (int, optional): Maximum number of trial points before giving up. Defaults to 100_000.
+            keep_off_boundary (bool, optional): Also keep electrons >= min_dist/2 from the polygon edge. Defaults to False.
+
+        Raises:
+            ValueError: If the polygon is too small for the requested min_dist.
+            RuntimeError: If fewer than n electrons could be placed within max_tries trial points.
+
+        Returns:
+            ArrayLike: array of electron positions in the order np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
+        """
+        rng = np.random.default_rng(rng)
+        region = polygon.buffer(-min_dist / 2) if keep_off_boundary else polygon
+        if region.is_empty:
+            raise ValueError("Polygon too small for the requested min_dist.")
+        prepared = prep(region)
+        minx, miny, maxx, maxy = region.bounds
+
+        pts = np.empty((0, 2))
+        tries = 0
+        while len(pts) < n:
+            if tries >= max_tries:
+                raise RuntimeError(f"Placed only {len(pts)}/{n} points after {max_tries} tries; "
+                                   "reduce n or min_dist.")
+            tries += 1
+            p = np.array([rng.uniform(minx, maxx), rng.uniform(miny, maxy)])
+            if not prepared.contains(Point(p)):
+                continue
+            if len(pts) and np.min(np.hypot(*(pts - p).T)) < min_dist:
+                continue
+            pts = np.vstack([pts, p])
+
+        return xy2r(pts[:, 0] * micron, pts[:, 1] * micron)
 
     def _no_overlap(self, existing_points: list, additional_point: tuple, epsilon: float) -> bool:
         """Helper function for make_by_chemical_potential.

@@ -61,3 +61,41 @@ def test_two_electron_modes_coupled_lc(options, Ltail):
     # Drop the rotation mode and the two resonator modes
     electron_freqs = freqs[freqs > 0.5 * f_com]
     assert electron_freqs / f_com == pytest.approx([1, 1, np.sqrt(3)], rel=1e-2)
+
+
+@pytest.mark.parametrize("options", [{"include_screening": False},
+                                     {"include_screening": True, "screening_length": 0.3e-6}])
+def test_stiffness_matrix_equals_hessian(options):
+    """The electron block of the EOM stiffness matrix must equal the Hessian of the total energy at equilibrium.
+    A rotated, anisotropic trap makes sure the electron pairs are not aligned with the x or y axis, such that
+    the xy cross terms (proportional to sin(2 theta)) are tested as well.
+    """
+    x = np.linspace(-3, 3, 401)
+    y = np.linspace(-3, 3, 401)
+    X, Y = np.meshgrid(x, y)
+    potential_dict = {"dot": -(1.0 * X ** 2 + 2.5 * Y ** 2 + 1.2 * X * Y).T,
+                      "xlist": x,
+                      "ylist": y}
+
+    fm = FullModel(potential_dict=potential_dict, voltage_dict={"dot": 1.0},
+                   trap_annealing_steps=[], potential_smoothing=1e-9, **options)
+    fm.set_rf_interpolator(rf_electrode_labels=["dot"])
+    r = fm.get_electron_positions(n_electrons=3)['x']
+    n = len(r) // 2
+
+    # Finite difference Hessian of the total energy in J/m^2, reordered to match the EOM: [x0, ..., xn, y0, ..., yn]
+    h = 1e-10
+    H = np.zeros((2 * n, 2 * n))
+    for i in range(2 * n):
+        dr = np.zeros(2 * n)
+        dr[i] = h
+        H[:, i] = (fm.grad_total(r + dr) - fm.grad_total(r - dr)) / (2 * h) * qe
+    order = list(range(0, 2 * n, 2)) + list(range(1, 2 * n, 2))
+    H = H[np.ix_(order, order)]
+
+    K, _ = fm.setup_eom(r, resonator_dict=None)
+    assert np.max(np.abs(K - H)) < 1e-4 * np.max(np.abs(H))
+
+    resonator_dict = {'La': 20e-9, 'Lb': 20e-9, 'Ca': 50e-15, 'Cb': 50e-15, 'Cdot': 10e-15, 'mode': 'diff'}
+    K, _ = fm.setup_eom_coupled_lc(r, resonator_dict=resonator_dict)
+    assert np.max(np.abs(K[2:, 2:] - H)) < 1e-4 * np.max(np.abs(H))

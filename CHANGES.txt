@@ -4,6 +4,242 @@ CHANGES
 Newest entries first. Each entry: what changed, why, affected files, how it was verified.
 
 
+2026-09-30  InitialCondition.random_particles
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. New method InitialCondition.random_particles(polygon, n, min_dist,
+   rng=None, max_tries=100_000, keep_off_boundary=False)
+   Files: quantum_electron/initial_condition.py
+   - Places n electrons at random inside a shapely polygon, with every pair
+     at least min_dist apart (rejection sampling). keep_off_boundary=True
+     also keeps electrons >= min_dist/2 from the polygon edge. rng accepts a
+     seed or a numpy Generator for reproducible initial conditions.
+   - Algorithm as provided by the user; adapted to the conventions of the
+     other make_* methods: polygon and min_dist in microns, returns
+     [x0, y0, x1, y1, ...] in meters, ready for get_electron_positions.
+   - Raises ValueError if the (buffered) polygon is empty, RuntimeError if
+     fewer than n electrons fit within max_tries trial points.
+
+2. Tests: tests/test_initial_condition.py (new)
+   - Non-convex L-shaped polygon: count, containment, edge distance with
+     keep_off_boundary, pairwise spacing >= min_dist, reproducibility.
+   - Both error cases.
+   - Output used directly as initial condition for get_electron_positions.
+
+Verification: full pytest suite passes (43 tests) in conda env fem2.
+
+
+2026-09-30  Fixed example notebooks 03 and 98
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. examples/03_periodic_boundaries.ipynb, cell 21 (row-structure phase diagram)
+   - make_rectangular was called with n_electrons (the whole array of
+     electron numbers) instead of the loop variable n_e, raising
+     "TypeError: only integer scalar arrays can be converted to a scalar
+     index". Now n_electrons=n_e.
+   - Note: the full sweep is 35 electron numbers x 101 voltages = 3535
+     minimizations, which takes several hours.
+
+2. examples/98_electron_capacitance.ipynb, cell 60
+   - fig.savefig wrote to a hardcoded path on the original author's machine
+     (/Users/gerwinkoolstra/Downloads/fig2a.pdf), raising FileNotFoundError.
+     Commented out, saving relative to the notebook if re-enabled:
+     # fig.savefig("fig2a.pdf", ...)
+
+Only these source lines changed; stored outputs are untouched.
+
+Verification (scratch copies, fem2 env): 98_electron_capacitance now runs
+end to end. 03_periodic_boundaries not yet re-verified (run stopped at the
+user's request; to be checked after upcoming changes).
+
+
+2026-09-30  FullModel accepts CouplingConstants; FreeFem 2Dmap reader
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. New module quantum_electron/coupling_constants.py
+   - CouplingConstants: dataclass (x, y, data) with the same fields and
+     conventions as zeroheliumkit.fem.fieldreader.CouplingConstants:
+     x, y in microns, data[electrode] indexed as [y, x], shape (ny, nx).
+   - read_ff_output(filename, ff_type): parser for FreeFem '2Dmap' and
+     '2Dslices' text output (as provided by the user), with ff_types and
+     flatten defined alongside it.
+   - load_coupling_constants(filename): reads a '2Dmap' file into a
+     CouplingConstants. The file stores arrays indexed as [x, y] (checked on
+     the non-square nat_comm_dot_zoomed_in.txt: 251 x-points, 501 y-points),
+     so they are transposed to [y, x].
+   - to_potential_dict(obj): converts a CouplingConstants (this package or
+     zeroheliumkit; matched on the attributes x, y, data, so zeroheliumkit
+     is not imported or required) into the internal potential_dict with
+     arrays indexed as [x, y]. A dict is returned unchanged. Raises on
+     masked arrays (splines cannot interpolate them; zeroheliumkit's
+     make_masked produces these) and on arrays whose shape is not
+     (len(y), len(x)).
+   - Exported from quantum_electron: CouplingConstants,
+     load_coupling_constants, to_potential_dict.
+
+2. Constructors accept either a potential_dict or a CouplingConstants
+   Files: quantum_electron/electron_counter.py (FullModel),
+          quantum_electron/utils.py (PotentialVisualization, make_potential,
+          find_minimum_location), quantum_electron/initial_condition.py
+          (InitialCondition)
+   - Conversion happens once, at construction; internally everything still
+     uses potential_dict (the ~90 uses of potential_dict['xlist'] etc. are
+     unchanged), and self.potential_dict is always a dict.
+   - The parameter is still named potential_dict, so existing calls such as
+     FullModel(potential_dict=...) keep working.
+
+3. Example notebooks no longer need zeroheliumkit
+   Files: examples/00_potential_inspection, 05_long_channel,
+          06_single_electron_trap
+   - Replaced FieldAnalyzer((file, 'phi', '2Dmap')) / phi.phi (old
+     zeroheliumkit API, removed in zeroheliumkit 2f89904) with
+     load_coupling_constants(file). Objects are passed directly to
+     FullModel / PotentialVisualization / InitialCondition; where the
+     notebook indexes the dict itself, to_potential_dict is used.
+   - Updated the markdown notes that said zeroheliumkit must be installed.
+   - Only cell sources changed; stored outputs are from the previous runs.
+   - Removed the leftover sys.path.append("/Volumes/EeroQ/lib/zeroheliumkit")
+     from 06.
+
+4. README: "Getting started" documents both input formats and
+   load_coupling_constants.
+
+5. Tests: tests/test_coupling_constants.py (new)
+   - Non-square synthetic well at (0.6, -0.3) um: same V(x, y) from dict and
+     from CouplingConstants, and one electron settles at (0.6, -0.3), not
+     at the swapped coordinates.
+   - load_coupling_constants on the non-square example file gives the same
+     potential as the raw FreeFem dictionary (the old workflow).
+   - Cross-check with zeroheliumkit itself: FieldAnalyzer(cc).potential
+     ([y, x]) equals the transpose of our potential ([x, y]). Skipped when
+     zeroheliumkit is not installed.
+   - Errors for masked arrays, wrong shapes, wrong type.
+
+Verification: full pytest suite passes (39 tests) in conda env fem2, with
+zeroheliumkit installed (so the cross-check ran).
+Executed all example notebooks (scratch copies, fem2 env):
+- Run end to end: 00_harmonic_well, 00_potential_inspection (failed before
+  this change), 01, 02, 04, 05_long_channel, 06_single_electron_trap
+  (failed before this change), 99.
+- Failures unrelated to this change (pre-existing, notebooks not edited):
+  03_periodic_boundaries cell 21 passes the array n_electrons instead of
+  the loop variable n_e to make_rectangular (cell was never executed in
+  the saved notebook); the two long sweeps before it run fine.
+  98_electron_capacitance saves a figure to a hardcoded path
+  (/Users/gerwinkoolstra/Downloads/fig2a.pdf); 30 of 38 code cells ran.
+  97_transmission_line hangs in headless execution (interactive ipywidgets,
+  scikit-rf; uses nothing from quantum_electron except package_versions);
+  stopped after ~39 min.
+
+
+2026-09-30  Removed the Schrodinger solver (package is classical only)
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Deleted quantum_electron/schrodinger_solver.py
+   - Removed classes Schrodinger, Schrodinger2D, SingleElectron and
+     QuantumAnalysis (single-electron quantum spectrum, anharmonicity,
+     resonator coupling g_ij).
+   - quantum_electron/__init__.py: dropped `from .schrodinger_solver import
+     QuantumAnalysis`. Public API is now FullModel, PotentialVisualization,
+     package_versions.
+   - quantum_electron/utils.py: removed construct_symmetric_y, which was only
+     used by the Schrodinger solver.
+
+2. Updated references
+   - examples/00_harmonic_well, 01_square_well, 04_time_dynamics,
+     06_single_electron_trap: removed the unused QuantumAnalysis import (none
+     of the notebooks called it); removed a commented-out QuantumAnalysis
+     line in 06. Only the import line / comment changed; outputs untouched.
+   - README.md: to-do "Split off the Schrodinger solver?" marked done.
+   - setup.py unchanged: the solver needed no extra dependencies.
+
+Verification: no remaining references (grep over .py, .ipynb, .md);
+`import quantum_electron` works; no undefined names in any module;
+full pytest suite passes (35 tests). Executed the edited notebooks
+(scratch copies, fem2 env): 00, 01 and 04 run end to end. 06 stops at
+cell 3, unrelated to this change: FieldAnalyzer from the installed
+ZeroHeliumKit now expects a CouplingConstants object instead of the
+(file, 'phi', '2Dmap') tuple the notebook passes. The cells of 06 after
+that point were therefore not executed.
+
+
+2026-09-30  EOM xy-coupling sign, 2D periodic boundaries, electron removal,
+            dot area, dependencies
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Fixed sign of the xy cross coupling between electron pairs in the EOM
+   (found while working on item 2; not in the original issue list)
+   Files: quantum_electron/eom_solver.py (setup_eom, setup_eom_coupled_lc)
+   - calculate_metrics returns XiXj[a, b] = x_b - x_a but
+     YiYj[a, b] = y_a - y_b (a consequence of np.meshgrid). grad_Vee accounts
+     for this, but the EOM computed tij = arctan(YiYj / XiXj) = -theta,
+     flipping sin(2 theta) and thus the sign of every pairwise xy term lij.
+     cos(2 theta), and hence the xx and yy blocks, were unaffected.
+   - Now tij = arctan(-YiYj / XiXj).
+   - Impact: mode frequencies and eigenvectors for any cluster whose pairs
+     are not aligned with the x or y axis (i.e. most 2D clusters), for both
+     Coulomb and Yukawa. Before the fix the EOM stiffness matrix differed
+     from the finite-difference Hessian of the energy by 76% (3 electrons
+     in a rotated anisotropic trap); after the fix by ~1e-6.
+
+2. Fixed pair distances with periodic boundaries in both x and y
+   Files: quantum_electron/position_solver.py (calculate_metrics)
+   - The x branch recomputed Rij against the unshifted distance and
+     discarded the y-wrapped minimum. Replaced the shift/min/copyto logic
+     with the standard minimum image convention per axis:
+     d -= L * round(d / L). Identical results for a single periodic axis.
+   - Note: only the nearest image is included (no Ewald sum), as before.
+
+3. Removal of unbound electrons now uses separate x and y bounds
+   Files: quantum_electron/electron_counter.py (FullModel.__init__,
+          new FullModel._remove_unbound, get_electron_positions)
+   - remove_bounds was a single (min, max) applied to both x and y, and its
+     default was 95% of the x range only; in a long narrow channel,
+     electrons escaping in y were never removed.
+   - remove_bounds now accepts ((xmin, xmax), (ymin, ymax)); the old
+     (min, max) form is still accepted and applied to both axes. The default
+     is 95% of the domain in each direction, about the domain center (same
+     as before for x on symmetric domains).
+   - The duplicated removal code is replaced by the helper _remove_unbound.
+
+4. Out-of-domain diagnostic uses the correct bounds
+   Files: quantum_electron/electron_counter.py (get_electron_positions)
+   - Compared |y| against x_max and ignored x > x_max. Now checks x and y
+     against their own domain limits. Print-only; results were unaffected.
+
+5. get_dot_area picks the contour around the potential minimum
+   Files: quantum_electron/electron_counter.py (get_dot_area)
+   - Previously used whichever contour skimage returned last. Now it uses
+     the smallest contour enclosing the minimum (find_minimum_location), or
+     the largest contour if none encloses it.
+   - Added an explicit `import shapely.plotting`. Hardening only: in the
+     fem2 env the submodule was already loaded indirectly, so plot=True did
+     not actually crash there.
+
+6. Declared core dependencies
+   Files: setup.py
+   - Added numpy, scipy, matplotlib to install_requires, and
+     extras_require={'test': ['pytest']}.
+
+7. Tests
+   Files: tests/test_eom.py (new test_stiffness_matrix_equals_hessian),
+          tests/test_periodic.py (new), tests/test_electron_counter.py (new)
+   - EOM stiffness matrix vs finite-difference Hessian (setup_eom and the
+     electron block of setup_eom_coupled_lc; Coulomb and Yukawa).
+   - calculate_metrics vs brute-force image search for [], [x], [y], [x, y].
+   - remove_bounds default / legacy format; get_dot_area with two wells.
+
+Verification: full pytest suite passes (35 tests) in conda env fem2.
+The new tests were also run against the previous code (HEAD) and fail
+there as expected: Hessian (both), periodic [x, y], remove_bounds (both),
+dot area. flake8 is not installed in fem2; ran py_compile instead.
+
+
 2026-09-30  EOM interaction prefactor, screening consistency, np.int crash
 --------------------------------------------------------------------------
 (committed as ebb4b75 on branch fix-eom-prefactors)
@@ -46,11 +282,7 @@ Verification: full pytest suite passes (26 tests) in conda env fem2
 
 Known issues (not yet fixed)
 ----------------------------
-- position_solver.calculate_metrics: with periodic boundaries in both x
-  and y, the x branch recomputes Rij from Rij_standard and discards the
-  y-shifted minimum.
-- electron_counter.get_electron_positions: out-of-domain diagnostic
-  compares |y| against x_max.
-- FullModel default remove_bounds uses the x-range for y as well.
-- FullModel.get_dot_area keeps only the last contour when several exist.
-- setup.py does not declare numpy, scipy, matplotlib as dependencies.
+- examples/97_transmission_line.ipynb does not run headless (widgets).
+- Periodic boundaries include only the nearest image; for unscreened
+  Coulomb interactions the long-range contribution of other images is
+  neglected (would require an Ewald sum).

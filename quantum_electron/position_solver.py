@@ -185,10 +185,10 @@ class PositionSolver:
         return xbounds[0] + (x - xbounds[0]) % (xbounds[1] - xbounds[0])
 
     def calculate_metrics(self, xi: ArrayLike, yi: ArrayLike) -> tuple:
-        """This function calculates the distances between electrons in the case of periodic boundary conditions. 
-        To deal with this, all electrons should first be mapped into the domain (self.x_min, self.x_max) and (self.y_min, self.y_max). 
-        To calculate the xi-xj, yi-yj and ri-rj we artificially move the electron positions and re-calculate 
-        the arrays. Finally we return the smallest ri-rj which can then be used to evaluate the electron-electron energy.
+        """This function calculates the pairwise separations between electrons, taking into account periodic boundary conditions.
+        Along each periodic direction the separation is wrapped into [-L/2, L/2] (minimum image convention), where L is the
+        size of the domain (self.x_min, self.x_max) or (self.y_min, self.y_max). Since |ri-rj|^2 = (xi-xj)^2 + (yi-yj)^2,
+        wrapping each direction independently yields the shortest ri-rj, which is used to evaluate the electron-electron energy.
 
         Args:
             xi (ArrayLike): 1D array of electron positions (x-coordinate)
@@ -203,41 +203,15 @@ class PositionSolver:
         XiXj = Xi - Xj
         YiYj = Yi - Yj
 
-        Rij_standard = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+        if 'x' in self.periodic_boundaries:
+            Lx = self.x_max - self.x_min
+            XiXj -= Lx * np.round(XiXj / Lx)
 
         if 'y' in self.periodic_boundaries:
-            Yi_shifted = Yi.copy()
-            Yi_shifted[Yi_shifted >
-                       self.y_center] -= np.abs(self.y_max - self.y_min)
-            Yj_shifted = Yi_shifted.T
-            YiYj_shifted = Yi_shifted - Yj_shifted
+            Ly = self.y_max - self.y_min
+            YiYj -= Ly * np.round(YiYj / Ly)
 
-            Rij_shifted = np.sqrt((XiXj) ** 2 + (YiYj_shifted) ** 2)
-
-            # Calculate the pairwise minimum of the shifted and standard expression.
-            Rij = np.minimum(Rij_standard, Rij_shifted)
-
-            # Use shifted y-coordinate only in this case:
-            np.copyto(YiYj, YiYj_shifted, where=Rij_shifted < Rij_standard)
-
-        if 'x' in self.periodic_boundaries:
-            # For periodic boundary conditions in the x-direction, if electrons move out of the simulation domain (x_min, x_max), they'll come back around.
-            Xi_shifted = Xi.copy()
-            Xi_shifted[Xi_shifted >
-                       self.x_center] -= np.abs(self.x_max - self.x_min)
-            Xj_shifted = Xi_shifted.T
-            XiXj_shifted = Xi_shifted - Xj_shifted
-
-            Rij_shifted = np.sqrt((XiXj_shifted) ** 2 + (YiYj) ** 2)
-
-            # Calculate the pairwise minimum of the shifted and standard expression.
-            Rij = np.minimum(Rij_standard, Rij_shifted)
-
-            # Use shifted y-coordinate only in this case:
-            np.copyto(XiXj, XiXj_shifted, where=Rij_shifted < Rij_standard)
-
-        if self.periodic_boundaries == []:
-            Rij = Rij_standard
+        Rij = np.sqrt(XiXj ** 2 + YiYj ** 2)
 
         return XiXj, YiYj, Rij
 

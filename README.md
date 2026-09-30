@@ -56,6 +56,13 @@ res = f.get_electron_positions(n_electrons=N, electron_initial_positions=initial
 f.plot_electron_positions(res)
 ```
 
+The first argument of `FullModel` can be a `potential_dict` (electrode names as keys with 2D arrays indexed as `[x, y]`, plus `'xlist'` and `'ylist'` in microns), or a `CouplingConstants` object from ZeroHeliumKit or from this package (attributes `x`, `y` and `data`, with arrays indexed as `[y, x]`). FreeFem `2Dmap` output files, such as those in `examples/fem_data`, can be loaded without ZeroHeliumKit:
+```
+from quantum_electron import FullModel, load_coupling_constants
+couplings = load_coupling_constants("examples/fem_data/nat_comm_dot_zoomed_in.txt")
+f = FullModel(couplings, voltages, **options)
+```
+
 There are a number of options that influence the solution of the minimization problem. Here is a dictionary of options that can be passed to `FullModel` to get started: 
 ```
 options = {"include_screening" : True, # Include screening of electron-electron interactions due to thin film.
@@ -83,4 +90,4 @@ If you found this module useful in your research, please consider citing this co
 ## To-do list
 - [ ] Standardize units of the arguments. Sometimes it is unclear whether to use microns or meters.
 - [ ] Figure out how to handle warning messages for convergence issues. Why do problems sometimes have a hard time converging?
-- [ ] Split off the Schrodinger solver?
+- [x] Split off the Schrodinger solver. It has been removed; this package now only does classical calculations.

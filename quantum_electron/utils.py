@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
 import pyvista
 from shapely import Polygon
 import shapely.plotting
@@ -9,6 +9,7 @@ from scipy.constants import elementary_charge as qe, epsilon_0
 from scipy.constants import Boltzmann as kB
 import matplotlib
 import importlib
+from .coupling_constants import CouplingConstants, to_potential_dict
 
 
 def package_versions():
@@ -128,23 +129,6 @@ def gamma_parameter(xi: ArrayLike, yi: ArrayLike, T: float) -> float:
     return qe ** 2 / (4 * np.pi * epsilon_0 * nearest_neighbor_distance) / (kB * T)
 
 
-def construct_symmetric_y(ymin: float, N: int) -> ArrayLike:
-    """
-    This helper function constructs a one-sided array from ymin to -dy/2 with N points.
-    The spacing is chosen such that, when mirrored around y = 0, the spacing is constant.
-
-    This requirement limits our choice for dy, because the spacing must be such that there's
-    an integer number of points in yeval. This can only be the case if
-    dy = 2 * ymin / (2*k+1) and Ny = ymin / dy - 0.5 + 1
-    yeval = y0, y0 - dy, ... , -3dy/2, -dy/2
-    :param ymin: Most negative value
-    :param N: Number of samples in the one-sided array
-    :return: One-sided array of length N.
-    """
-    dy = 2 * np.abs(ymin) / float(2 * N + 1)
-    return np.linspace(ymin, -dy / 2., int((np.abs(ymin) - 0.5 * dy) / dy + 1))
-
-
 def find_nearest(array: ArrayLike, value: float) -> int:
     """
     Finds the nearest value in array. Returns index of array for which this is true.
@@ -178,7 +162,7 @@ def xy2r(x: ArrayLike, y: ArrayLike) -> ArrayLike:
         raise ValueError("x and y must have the same length!")
 
 
-def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]) -> ArrayLike:
+def make_potential(potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltages: Dict[str, float]) -> ArrayLike:
     """Creates a numpy array potential based on an array of coupling coefficient arrays stored in potential_dict. 
     The returned potential values are positive for a positive voltage applied to the gate. Therefore, to transform
     the potential into potential energy, multiply with -1.
@@ -190,8 +174,9 @@ def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, flo
         applied to each electrode
 
     Returns:
-        ArrayLike: Inner product of the coupling coefficient arrays and the voltages. 
+        ArrayLike: Inner product of the coupling coefficient arrays and the voltages, indexed as [x, y].
     """
+    potential_dict = to_potential_dict(potential_dict)
 
     for k, key in enumerate(list(voltages.keys())):
         if k == 0:
@@ -202,7 +187,7 @@ def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, flo
     return potential
 
 
-def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], return_potential_value: bool = False) -> tuple[float, float]:
+def find_minimum_location(potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltages: Dict[str, float], return_potential_value: bool = False) -> tuple[float, float]:
     """Find the coordinates of the minimum energy point for a single electron.
 
     Args:
@@ -213,6 +198,7 @@ def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[s
     Returns:
         tuple[float, float]: (x_min, y_min, V_min) where the potential energy for a single electron is minimized. Units are in micron, eV.
     """
+    potential_dict = to_potential_dict(potential_dict)
 
     potential = make_potential(potential_dict, voltages)
     zdata = -potential.T
@@ -245,8 +231,17 @@ def crop_potential(x: ArrayLike, y: ArrayLike, U: ArrayLike, xrange: tuple, yran
 
 
 class PotentialVisualization:
-    def __init__(self, potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]):
-        self.potential_dict = potential_dict
+    def __init__(self, potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltages: Dict[str, float]):
+        """Class for plotting the potential energy landscape.
+
+        Args:
+            potential_dict (Union[Dict[str, ArrayLike], CouplingConstants]): Dictionary containing at least the keys also present in the voltages dictionary.
+            The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+            Alternatively, a CouplingConstants object (from quantum_electron or zeroheliumkit) with attributes x, y and data.
+            voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
+            applied to each electrode
+        """
+        self.potential_dict = to_potential_dict(potential_dict)
         self.voltage_dict = voltages
             
     def plot_coupling_constant_ratio(self, electrode1: str, electrode2: Optional[str], loc: tuple = (-1, 0), ax=None, coor: Optional[List[float]] = [0, 0], dxdy: List[float] = [1, 2], 

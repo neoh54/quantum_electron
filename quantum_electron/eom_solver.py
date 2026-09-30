@@ -177,7 +177,9 @@ class EOMSolver:
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye)
 
         np.fill_diagonal(XiXj, 1E-15)
-        tij = np.arctan(YiYj / XiXj)
+        # calculate_metrics returns XiXj[a, b] = x_b - x_a but YiYj[a, b] = y_a - y_b, so flip the sign of YiYj
+        # to obtain the angle of the separation vector. cos(2 tij) is insensitive to this, but sin(2 tij) is not.
+        tij = np.arctan(-YiYj / XiXj)
 
         # Remember to set the diagonal back to 0
         np.fill_diagonal(tij, 0)
@@ -289,7 +291,9 @@ class EOMSolver:
 
         # Set Xi - Xi to a finite value to avoid dividing by zero.
         np.fill_diagonal(XiXj, 1E-15)
-        tij = np.arctan(YiYj / XiXj)
+        # calculate_metrics returns XiXj[a, b] = x_b - x_a but YiYj[a, b] = y_a - y_b, so flip the sign of YiYj
+        # to obtain the angle of the separation vector. cos(2 tij) is insensitive to this, but sin(2 tij) is not.
+        tij = np.arctan(-YiYj / XiXj)
 
         # Remember to set the diagonal back to 0
         np.fill_diagonal(tij, 0)

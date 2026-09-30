@@ -4,10 +4,12 @@ from matplotlib import pyplot as plt
 from matplotlib import patheffects as pe
 import matplotlib.animation as animation
 import shapely
-from shapely import Polygon
+import shapely.plotting
+from shapely import Polygon, Point
 import numpy as np
 from .utils import find_nearest, xy2r, r2xy, find_minimum_location, make_potential
 from .utils import PotentialVisualization
+from .coupling_constants import CouplingConstants, to_potential_dict
 from .position_solver import PositionSolver, ConvergenceMonitor
 from .eom_solver import EOMSolver
 from scipy.signal import convolve2d
@@ -16,11 +18,11 @@ from skimage import measure
 from scipy.interpolate import interp1d
 
 from numpy.typing import ArrayLike
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 
 class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
-    def __init__(self, potential_dict: Dict[str, ArrayLike], voltage_dict: Dict[str, float],
+    def __init__(self, potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltage_dict: Dict[str, float],
                  include_screening: bool = False, screening_length: float = np.inf,
                  potential_smoothing: float = 5e-4, remove_unbound_electrons: bool = False, remove_bounds: Optional[tuple] = None,
                  trap_annealing_steps: list = [0.1] * 5, max_x_displacement: float = 0.2e-6, max_y_displacement: float = 0.2e-6) -> None:
@@ -33,13 +35,18 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         fm.get_electron_positions(n_electrons=5)
 
         Args:
-            potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
+            potential_dict (Union[Dict[str, ArrayLike], CouplingConstants]): Dictionary containing at least the keys also present in the voltages dictionary.
             The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+            Alternatively, a CouplingConstants object (from quantum_electron or zeroheliumkit) with attributes x, y and data.
             voltage_dict (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
             applied to each electrode
+            remove_bounds (Optional[tuple]): Electrons outside these bounds are removed if remove_unbound_electrons is True. Units are meters.
+            Either ((xmin, xmax), (ymin, ymax)), or (min, max) which is applied to both x and y. Defaults to None, in which case 95% of the
+            simulation domain is used in each direction.
         """
         self.rf_interpolator = None
 
+        potential_dict = to_potential_dict(potential_dict)
         self.potential_dict = potential_dict
         self.voltage_dict = voltage_dict
 
@@ -48,8 +55,13 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         self.potential_smoothing = potential_smoothing
         self.spline_order = 3
         if remove_bounds is None:
-            self.remove_bounds = (
-                0.95*potential_dict['xlist'][0] * 1e-6, 0.95*potential_dict['xlist'][-1] * 1e-6)
+            # 95% of the simulation domain, in each direction separately
+            bounds = []
+            for key in ['xlist', 'ylist']:
+                lo, hi = potential_dict[key][0] * 1e-6, potential_dict[key][-1] * 1e-6
+                center, half_width = (lo + hi) / 2, 0.95 * (hi - lo) / 2
+                bounds.append((center - half_width, center + half_width))
+            self.remove_bounds = tuple(bounds)
         else:
             self.remove_bounds = remove_bounds
         self.remove_unbound_electrons = remove_unbound_electrons
@@ -295,13 +307,14 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         contours = measure.find_contours(-potential.T,
                                          barrier_height + barrier_offset)
 
-        # There may be multiple contours, but hopefully just one.
-        if len(contours) > 0:
-            for contour in contours:
-                xs = fx(contour[:, 1])
-                ys = fy(contour[:, 0])
+        # A contour needs at least 3 points to span an area
+        polygons = [Polygon(np.c_[fx(contour[:, 1]), fy(contour[:, 0])]) for contour in contours if len(contour) >= 3]
 
-            p = Polygon(np.c_[xs, ys])
+        if len(polygons) > 0:
+            # There may be multiple contours: pick the one that encloses the potential minimum, or else the largest one.
+            minimum = Point(find_minimum_location(self.potential_dict, self.voltage_dict))
+            enclosing = [p for p in polygons if p.contains(minimum)]
+            p = min(enclosing, key=lambda p: p.area) if enclosing else max(polygons, key=lambda p: p.area)
 
             if plot:
                 shapely.plotting.plot_polygon(p, **kwargs)
@@ -311,6 +324,25 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         else:
             # If there are no contours, the situation is easy
             return 0.0
+
+    def _remove_unbound(self, r: ArrayLike) -> tuple:
+        """Removes electrons that lie outside self.remove_bounds.
+
+        Args:
+            r (ArrayLike): Electron coordinates in the order [x0, y0, x1, y1, ...]
+
+        Returns:
+            tuple: x and y coordinates of the electrons that remain.
+        """
+        # Support the legacy format (min, max), which applies to both x and y.
+        if np.ndim(self.remove_bounds) == 1:
+            xbounds = ybounds = self.remove_bounds
+        else:
+            xbounds, ybounds = self.remove_bounds
+
+        x, y = r2xy(r)
+        outside = (x < xbounds[0]) | (x > xbounds[1]) | (y < ybounds[0]) | (y > ybounds[1])
+        return x[~outside], y[~outside]
 
     def get_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
                                suppress_warnings: bool = False) -> dict:
@@ -362,16 +394,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
             # Try removing unbounded electrons and restart the minimization
             if self.remove_unbound_electrons:
-                # Remove any electrons that are to the left of the trap
-                best_x, best_y = r2xy(res['x'])
-                idcs_x = np.where(np.logical_or(
-                    best_x < self.remove_bounds[0], best_x > self.remove_bounds[1]))[0]
-                idcs_y = np.where(np.logical_or(
-                    best_y < self.remove_bounds[0], best_y > self.remove_bounds[1]))[0]
-
-                all_idcs_to_remove = np.union1d(idcs_x, idcs_y)
-                best_x = np.delete(best_x, all_idcs_to_remove)
-                best_y = np.delete(best_y, all_idcs_to_remove)
+                # Remove any electrons that are outside self.remove_bounds
+                best_x, best_y = self._remove_unbound(res['x'])
 
                 # Use the solution from the current time step as the initial condition for the next timestep!
                 electron_initial_positions = xy2r(best_x, best_y)
@@ -393,8 +417,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
                     break
             else:
                 best_x, best_y = r2xy(res['x'])
-                idxs = np.union1d(np.where(best_x < self.x_min)
-                                  [0], np.where(np.abs(best_y) > self.x_max)[0])
+                idxs = np.where((best_x < self.x_min) | (best_x > self.x_max) |
+                                (best_y < self.y_min) | (best_y > self.y_max))[0]
                 if len(idxs) > 0 and (not suppress_warnings):
                     print("Following electrons are outside the simulation domain")
                     for i in idxs:
@@ -430,16 +454,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             best_res = res
 
         if self.remove_unbound_electrons:
-            best_x, best_y = r2xy(best_res['x'])
-            idcs_x = np.where(np.logical_or(best_x < self.remove_bounds[0],
-                                            best_x > self.remove_bounds[1]))[0]
-            idcs_y = np.where(np.logical_or(best_y < self.remove_bounds[0],
-                                            best_y > self.remove_bounds[1]))[0]
-
-            all_idcs_to_remove = np.union1d(idcs_x, idcs_y)
-            best_x = np.delete(best_x, all_idcs_to_remove)
-            best_y = np.delete(best_y, all_idcs_to_remove)
-
+            best_x, best_y = self._remove_unbound(best_res['x'])
             best_res['x'] = xy2r(best_x, best_y)
 
         return best_res
