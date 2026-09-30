@@ -23,12 +23,17 @@ Clone this module in a directory of your choice
 ```
 git clone https://github.com/gkoolstra/quantum_electron.git
 ```
-In a terminal window, change into the cloned directory:
+In a terminal window, change into the cloned directory and install the package (Python 3.10 or newer) in editable mode, either with pip:
 ```
 cd quantum_electron
-pip install -e .
+pip install -e ".[test]"
 ```
-After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
+or with [uv](https://docs.astral.sh/uv/), which creates a virtual environment in `.venv` and installs the package together with the development tools (pytest, ruff, nbstripout):
+```
+cd quantum_electron
+uv sync
+```
+The source code lives in `src/quantum_electron`. To run the example notebooks, also install the `notebooks` extra (Jupyter, IPython for animations, pyvista for `select_outer_electrons`, alive_progress, sympy): `pip install -e ".[notebooks]"` or `uv sync --extra notebooks`. After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
 
 ### Additional packages
 To generate animations, this module relies on `ffmpeg`. On MacOS this can be easily installed using [homebrew](https://formulae.brew.sh/formula/ffmpeg) from the Terminal. On Windows it can be installed using the following [link](https://www.ffmpeg.org/download.html). 
@@ -36,7 +41,7 @@ To generate animations, this module relies on `ffmpeg`. On MacOS this can be eas
 This module also integrates well with the output of the FEM software [ZeroHeliumKit](https://github.com/eeroqlab/zeroheliumkit). Please refer to any dependencies for ZHK on the linked github page.
 
 ## Tests
-To test the performance of the minimization, we're building and expanding a suite of tests based on the `pytest` framework. To run these tests, `cd` into the main module directory and run `pytest`. Currently, we have implemented a test in `test_wigner_molecules.py`, which compares the energy per particle of Wigner molecules in a parabolic confinement to known tabulated values.
+To test the performance of the minimization, we're building and expanding a suite of tests based on the `pytest` framework. To run these tests, `cd` into the main module directory and run `pytest` (or `uv run pytest`). Currently, we have implemented a test in `test_wigner_molecules.py`, which compares the energy per particle of Wigner molecules in a parabolic confinement to known tabulated values.
 
 ## Getting started
 The best way to learn how to use the module is to browse the examples. At a very high level this is the workflow:
@@ -56,6 +61,13 @@ res = f.get_electron_positions(n_electrons=N, electron_initial_positions=initial
 f.plot_electron_positions(res)
 ```
 
+The first argument of `FullModel` can be a `potential_dict` (electrode names as keys with 2D arrays indexed as `[x, y]`, plus `'xlist'` and `'ylist'` in microns), or a `CouplingConstants` object from ZeroHeliumKit or from this package (attributes `x`, `y` and `data`, with arrays indexed as `[y, x]`). FreeFem `2Dmap` output files, such as those in `examples/fem_data`, can be loaded without ZeroHeliumKit:
+```
+from quantum_electron import FullModel, load_coupling_constants
+couplings = load_coupling_constants("examples/fem_data/nat_comm_dot_zoomed_in.txt")
+f = FullModel(couplings, voltages, **options)
+```
+
 There are a number of options that influence the solution of the minimization problem. Here is a dictionary of options that can be passed to `FullModel` to get started: 
 ```
 options = {"include_screening" : True, # Include screening of electron-electron interactions due to thin film.
@@ -68,6 +80,24 @@ options = {"include_screening" : True, # Include screening of electron-electron 
            "max_y_displacement" : 0.1e-6} # Maximum y-displacement of solved electron positions during annealing.
 ```
 
+## Units
+Lengths follow one rule:
+- **Meters (SI)** for electron coordinates and everything that is compared to them: electron positions `r = [x0, y0, x1, y1, ...]` (including the initial condition and `res['x']` returned by `get_electron_positions`), `remove_bounds`, `max_x_displacement` / `max_y_displacement`, the bounds of `count_electrons_in_dot`, and the `amplitude` of eigenvector animations. Energies are in eV, gradients in eV/m.
+- **Microns** for everything that refers to the potential map or a plot window: `xlist` / `ylist` (and the `x`, `y` of a `CouplingConstants` object), `coor`, `dxdy`, `loc`, `center`, `barrier_location`, and the shapes and spacings passed to `InitialCondition` (`coor`, `dxdy`, `min_spacing`, `polygon`, `min_dist`).
+
+In the docstrings, every length argument is tagged with its unit, `[m]` or `[microns]`. Arguments that end in `_um` are in microns. For example, `generate_initial_condition(n, radius_um=0.2, center=(0, 0))` places `n` electrons on a circle of radius 0.2 microns around (0, 0) microns; the older `radius` argument (in meters) still works but is deprecated.
+
+## Warnings
+Problems during a calculation are reported as Python warnings rather than printed messages: a `ConvergenceWarning` if the minimization did not converge, and a `QuantumElectronWarning` (the base class) for e.g. removed or out-of-domain electrons. They can be filtered with the standard `warnings` module, for example in a voltage sweep:
+```
+import warnings
+from quantum_electron import ConvergenceWarning, QuantumElectronWarning
+
+warnings.simplefilter("ignore", QuantumElectronWarning)  # silence all quantum_electron warnings
+warnings.simplefilter("error", ConvergenceWarning)       # or: raise an exception when a minimization does not converge
+```
+`get_electron_positions(..., suppress_warnings=True)` silences them for a single call.
+
 ## Tips for the initial condition
 The initial condition can affect the final minimization result quite strongly. We encourage you to take a look at the example notebook about initial conditions. If there are issues with convergence you can first check convergence with `f.plot_convergence()`. A good final value for the cost function is ~1-500 eV/m. If the lowest value of the cost function is signifantly higher than this, or if warnings appear, here are some rules of thumb for successful convergence:
 1. Don't create an initial condition where too many electrons are placed in a small area.
@@ -77,10 +107,18 @@ The initial condition can affect the final minimization result quite strongly. W
 ## Contributing
 Contributions to this growing repository are welcome. Please feel free to create a fork and create a pull request with your suggested changes.
 
+Notebook outputs are not stored in git. After cloning, register the [nbstripout](https://github.com/kynan/nbstripout) git filter once (it is included in the uv `dev` group, or `pip install nbstripout`):
+```
+nbstripout --install
+```
+The filter strips outputs and execution counts when notebooks are staged; your local copies keep their outputs.
+
+By default `pytest` skips tests marked as slow (`tests/test_performance.py`). Run them with `pytest -m slow`, or everything with `pytest -m ""`.
+
 ## Credit
 If you found this module useful in your research, please consider citing this code in your publication using a hyperlink.
 
 ## To-do list
-- [ ] Standardize units of the arguments. Sometimes it is unclear whether to use microns or meters.
+- [ ] Standardize units of the arguments. The current convention is documented in the Units section, but a single unit for all arguments would be a breaking change (e.g. for a 1.0 release).
 - [ ] Figure out how to handle warning messages for convergence issues. Why do problems sometimes have a hard time converging?
-- [ ] Split off the Schrodinger solver?
+- [x] Split off the Schrodinger solver. It has been removed; this package now only does classical calculations.

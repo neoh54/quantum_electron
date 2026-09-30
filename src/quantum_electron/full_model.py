@@ -4,23 +4,27 @@ from matplotlib import pyplot as plt
 from matplotlib import patheffects as pe
 import matplotlib.animation as animation
 import shapely
-from shapely import Polygon
+import shapely.plotting
+from shapely import Polygon, Point
 import numpy as np
+import warnings
 from .utils import find_nearest, xy2r, r2xy, find_minimum_location, make_potential
 from .utils import PotentialVisualization
+from .coupling_constants import CouplingConstants, to_potential_dict
 from .position_solver import PositionSolver, ConvergenceMonitor
 from .eom_solver import EOMSolver
+from .exceptions import QuantumElectronWarning, ConvergenceWarning
 from scipy.signal import convolve2d
 from scipy.constants import elementary_charge as q_e, epsilon_0 as eps0, electron_mass as m_e
 from skimage import measure
 from scipy.interpolate import interp1d
 
 from numpy.typing import ArrayLike
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 
 class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
-    def __init__(self, potential_dict: Dict[str, ArrayLike], voltage_dict: Dict[str, float],
+    def __init__(self, potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltage_dict: Dict[str, float],
                  include_screening: bool = False, screening_length: float = np.inf,
                  potential_smoothing: float = 5e-4, remove_unbound_electrons: bool = False, remove_bounds: Optional[tuple] = None,
                  trap_annealing_steps: list = [0.1] * 5, max_x_displacement: float = 0.2e-6, max_y_displacement: float = 0.2e-6) -> None:
@@ -33,13 +37,18 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         fm.get_electron_positions(n_electrons=5)
 
         Args:
-            potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
+            potential_dict (Union[Dict[str, ArrayLike], CouplingConstants]): Dictionary containing at least the keys also present in the voltages dictionary.
             The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+            Alternatively, a CouplingConstants object (from quantum_electron or zeroheliumkit) with attributes x, y and data.
             voltage_dict (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
             applied to each electrode
+            remove_bounds (Optional[tuple]): Electrons outside these bounds are removed if remove_unbound_electrons is True. Units are meters.
+            Either ((xmin, xmax), (ymin, ymax)), or (min, max) which is applied to both x and y. Defaults to None, in which case 95% of the
+            simulation domain is used in each direction.
         """
         self.rf_interpolator = None
 
+        potential_dict = to_potential_dict(potential_dict)
         self.potential_dict = potential_dict
         self.voltage_dict = voltage_dict
 
@@ -48,8 +57,13 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         self.potential_smoothing = potential_smoothing
         self.spline_order = 3
         if remove_bounds is None:
-            self.remove_bounds = (
-                0.95*potential_dict['xlist'][0] * 1e-6, 0.95*potential_dict['xlist'][-1] * 1e-6)
+            # 95% of the simulation domain, in each direction separately
+            bounds = []
+            for key in ['xlist', 'ylist']:
+                lo, hi = potential_dict[key][0] * 1e-6, potential_dict[key][-1] * 1e-6
+                center, half_width = (lo + hi) / 2, 0.95 * (hi - lo) / 2
+                bounds.append((center - half_width, center + half_width))
+            self.remove_bounds = tuple(bounds)
         else:
             self.remove_bounds = remove_bounds
         self.remove_unbound_electrons = remove_unbound_electrons
@@ -146,8 +160,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         This function is used by the setup_eom_coupled_lc function.
 
         Args:
-            xe (ArrayLike): array of x-coordinates where Ex should be evaluated.
-            ye (ArrayLike): array of y-coordinates where Ex should be evaluated.
+            xe (ArrayLike): [m] array of x-coordinates where Ex should be evaluated.
+            ye (ArrayLike): [m] array of y-coordinates where Ex should be evaluated.
 
         Returns:
             ArrayLike: RF electric field 
@@ -160,8 +174,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         This function is used by the setup_eom_coupled_lc function.
 
         Args:
-            xe (ArrayLike): array of x-coordinates where Ex should be evaluated.
-            ye (ArrayLike): array of y-coordinates where Ex should be evaluated.
+            xe (ArrayLike): [m] array of x-coordinates where Ex should be evaluated.
+            ye (ArrayLike): [m] array of y-coordinates where Ex should be evaluated.
 
         Returns:
             ArrayLike: RF electric field 
@@ -174,8 +188,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         This function is used by the setup_eom_coupled_lc function.
 
         Args:
-            xe (ArrayLike): array of x-coordinates where Ex should be evaluated.
-            ye (ArrayLike): array of y-coordinates where Ex should be evaluated.
+            xe (ArrayLike): [m] array of x-coordinates where Ey should be evaluated.
+            ye (ArrayLike): [m] array of y-coordinates where Ey should be evaluated.
 
         Returns:
             ArrayLike: RF electric field 
@@ -188,8 +202,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         This function is used by the setup_eom_coupled_lc function.
 
         Args:
-            xe (ArrayLike): array of x-coordinates where Ex should be evaluated.
-            ye (ArrayLike): array of y-coordinates where Ex should be evaluated.
+            xe (ArrayLike): [m] array of x-coordinates where Ey should be evaluated.
+            ye (ArrayLike): [m] array of y-coordinates where Ey should be evaluated.
 
         Returns:
             ArrayLike: RF electric field 
@@ -201,8 +215,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         This function is used by the setup_eom function.
 
         Args:
-            xe (ArrayLike): array of x-coordinates where Ex should be evaluated.
-            ye (ArrayLike): array of y-coordinates where Ex should be evaluated.
+            xe (ArrayLike): [m] array of x-coordinates where Ex should be evaluated.
+            ye (ArrayLike): [m] array of y-coordinates where Ex should be evaluated.
 
         Returns:
             ArrayLike: RF electric field 
@@ -214,24 +228,39 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         This function is used by the setup_eom function.
 
         Args:
-            xe (ArrayLike): array of x-coordinates where Ey should be evaluated.
-            ye (ArrayLike): array of y-coordinates where Ey should be evaluated.
+            xe (ArrayLike): [m] array of x-coordinates where Ey should be evaluated.
+            ye (ArrayLike): [m] array of y-coordinates where Ey should be evaluated.
 
         Returns:
             ArrayLike: RF electric field 
         """
         return self.rf_interpolator.ev(xe, ye, dy=1)
 
-    def generate_initial_condition(self, n_electrons: int, radius: float = 0.18E-6, center=None) -> ArrayLike:
+    def generate_initial_condition(self, n_electrons: int, radius: Optional[float] = None, center: Optional[tuple] = None,
+                                   radius_um: Optional[float] = None) -> ArrayLike:
         """Generates an initial condition for an arbitrary number of electrons. The coordinates are organized in a circular fashion and 
         are centered around the potential minimum.
 
         Args:
             n_electrons (int): Number of electrons.
+            radius (Optional[float], optional): [m] Deprecated, use radius_um instead. Radius of the circle. Defaults to None.
+            center (Optional[tuple], optional): [microns] Center (x, y) of the circle. Defaults to None, in which case the location of the
+            potential minimum is used.
+            radius_um (Optional[float], optional): [microns] Radius of the circle. Defaults to None, in which case 0.18 microns is used.
 
         Returns:
-            ArrayLike: One-dimensional array (length = 2 * n_electrons) of x and y coordinates: [x0, y0, x1, y0, ...]
+            ArrayLike: [m] One-dimensional array (length = 2 * n_electrons) of x and y coordinates: [x0, y0, x1, y1, ...]
         """
+        if radius is not None:
+            if radius_um is not None:
+                raise TypeError("Specify the radius with radius_um (in microns) only.")
+            warnings.warn("The argument `radius` (in meters) of generate_initial_condition is deprecated, "
+                          "use `radius_um` (in microns) instead.", DeprecationWarning, stacklevel=2)
+            radius_um = radius * 1e6
+        elif radius_um is None:
+            radius_um = 0.18
+        radius = radius_um * 1e-6
+
         if center is None:
             coor = find_minimum_location(
                 self.potential_dict, self.voltage_dict)
@@ -252,9 +281,9 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         """Counts the number of coordinate pairs in r that fall within the bounds specified by trap_bounds_x and trap_bounds_y
 
         Args:
-            r (ArrayLike): Electron coordinates of length 2 * n_electrons. This should be in the order [x0, y0, x1, y1, ...]
-            trap_bounds_x (tuple, optional): Electrons will be counted if they fall within this x-domain. The unit is meters. Defaults to (-1e-6, 1e-6).
-            trap_bounds_y (tuple, optional): Electrons will be counted if they fall within this y-domain. The unit is meters. Defaults to (-1e-6, 1e-6).
+            r (ArrayLike): [m] Electron coordinates of length 2 * n_electrons. This should be in the order [x0, y0, x1, y1, ...]
+            trap_bounds_x (tuple, optional): [m] Electrons will be counted if they fall within this x-domain. Defaults to (-1e-6, 1e-6).
+            trap_bounds_y (tuple, optional): [m] Electrons will be counted if they fall within this y-domain. Defaults to (-1e-6, 1e-6).
 
         Returns:
             float: Number of electrons within the confines of the dot.
@@ -271,7 +300,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         Args:
             plot (bool, optional): Plot the contour and polygon spanned by that contour. Defaults to True.
-            barrier_location (tuple, optional): Location (x, y) in the map where to measure the barrier_height. The contour
+            barrier_location (tuple, optional): [microns] Location (x, y) in the map where to measure the barrier_height. The contour
             will be drawn `barrier_offset` above the potential value at the barrier_location. Defaults to (-1, 0).
             barrier_offset (float, optional): barrier_offset in eV. The contour will be drawn with this offset. Defaults to -0.01 (eV).
 
@@ -295,13 +324,14 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         contours = measure.find_contours(-potential.T,
                                          barrier_height + barrier_offset)
 
-        # There may be multiple contours, but hopefully just one.
-        if len(contours) > 0:
-            for contour in contours:
-                xs = fx(contour[:, 1])
-                ys = fy(contour[:, 0])
+        # A contour needs at least 3 points to span an area
+        polygons = [Polygon(np.c_[fx(contour[:, 1]), fy(contour[:, 0])]) for contour in contours if len(contour) >= 3]
 
-            p = Polygon(np.c_[xs, ys])
+        if len(polygons) > 0:
+            # There may be multiple contours: pick the one that encloses the potential minimum, or else the largest one.
+            minimum = Point(find_minimum_location(self.potential_dict, self.voltage_dict))
+            enclosing = [p for p in polygons if p.contains(minimum)]
+            p = min(enclosing, key=lambda p: p.area) if enclosing else max(polygons, key=lambda p: p.area)
 
             if plot:
                 shapely.plotting.plot_polygon(p, **kwargs)
@@ -312,6 +342,25 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             # If there are no contours, the situation is easy
             return 0.0
 
+    def _remove_unbound(self, r: ArrayLike) -> tuple:
+        """Removes electrons that lie outside self.remove_bounds.
+
+        Args:
+            r (ArrayLike): Electron coordinates in the order [x0, y0, x1, y1, ...]
+
+        Returns:
+            tuple: x and y coordinates of the electrons that remain.
+        """
+        # Support the legacy format (min, max), which applies to both x and y.
+        if np.ndim(self.remove_bounds) == 1:
+            xbounds = ybounds = self.remove_bounds
+        else:
+            xbounds, ybounds = self.remove_bounds
+
+        x, y = r2xy(r)
+        outside = (x < xbounds[0]) | (x > xbounds[1]) | (y < ybounds[0]) | (y > ybounds[1])
+        return x[~outside], y[~outside]
+
     def get_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
                                suppress_warnings: bool = False) -> dict:
         """This is the main method to calculate the electron positions in an electrostatic potential. This function can be called with a specific initial condition, 
@@ -321,13 +370,15 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         Args:
             n_electrons (int): Number of electrons.
-            electron_initial_positions (Optional[ArrayLike], optional): Electron initial positions in the form [x0, y0, x1, y1, ...]. Defaults to None.
+            electron_initial_positions (Optional[ArrayLike], optional): [m] Electron initial positions in the form [x0, y0, x1, y1, ...]. Defaults to None.
             verbose (bool, optional): Prints convergence information. Defaults to False.
-            suppress_warnings (bool, optional): If false, this prints warnings if the minimization fails to converge. Defaults to False.
+            suppress_warnings (bool, optional): If True, no QuantumElectronWarning (e.g. ConvergenceWarning) is issued. This is equivalent to
+            warnings.simplefilter("ignore", QuantumElectronWarning), and does not change the result. Defaults to False.
 
         Returns:
             dict: Dictionary object returned from scipy.optimize.minimize. Some useful attributes in this dictionary: 'status' > 0 means the minimization failed. 
-            'x' contains the best solution that minimizes the gradient contained in 'jac'.
+            'x' contains the best solution [m] in the form [x0, y0, x1, y1, ...], which minimizes the gradient contained in 'jac' [eV/m].
+            'fun' is the total energy [eV].
         """
 
         if electron_initial_positions is None:
@@ -335,8 +386,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
                 n_electrons)
 
         if (len(electron_initial_positions) // 2 != n_electrons) and (not suppress_warnings):
-            print(
-                "WARNING: The initial condition does not match n_electrons. n_electrons is ignored.")
+            warnings.warn(f"The initial condition contains {len(electron_initial_positions) // 2} electrons, which does not match "
+                          f"n_electrons = {n_electrons}. n_electrons is ignored.", QuantumElectronWarning, stacklevel=2)
 
         self.CM = self.ConvergenceMonitor(
             self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
@@ -357,32 +408,27 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         res = scipy.optimize.minimize(
             self.Vtotal, electron_initial_positions, **trap_minimizer_options)
 
+        no_electrons_left = False
         while res['status'] > 0:
-            no_electrons_left = False
 
             # Try removing unbounded electrons and restart the minimization
             if self.remove_unbound_electrons:
-                # Remove any electrons that are to the left of the trap
-                best_x, best_y = r2xy(res['x'])
-                idcs_x = np.where(np.logical_or(
-                    best_x < self.remove_bounds[0], best_x > self.remove_bounds[1]))[0]
-                idcs_y = np.where(np.logical_or(
-                    best_y < self.remove_bounds[0], best_y > self.remove_bounds[1]))[0]
-
-                all_idcs_to_remove = np.union1d(idcs_x, idcs_y)
-                best_x = np.delete(best_x, all_idcs_to_remove)
-                best_y = np.delete(best_y, all_idcs_to_remove)
+                # Remove any electrons that are outside self.remove_bounds
+                best_x, best_y = self._remove_unbound(res['x'])
 
                 # Use the solution from the current time step as the initial condition for the next timestep!
                 electron_initial_positions = xy2r(best_x, best_y)
-                if len(best_x) < len(res['x'][::2]) and (not suppress_warnings):
-                    print("%d/%d unbounded electrons removed. %d electrons remain." % (
-                        int(len(res['x'][::2]) - len(best_x)), len(res['x'][::2]), len(best_x)))
-                else:  # sometimes the simulation doesn't converge for other reasons...
+                if len(best_x) == len(res['x'][::2]):
+                    # No electrons were removed: the simulation didn't converge for other reasons...
                     break
 
+                if not suppress_warnings:
+                    warnings.warn(f"{len(res['x'][::2]) - len(best_x)}/{len(res['x'][::2])} unbound electrons removed. "
+                                  f"{len(best_x)} electrons remain.", QuantumElectronWarning, stacklevel=2)
+
                 if len(electron_initial_positions) > 0:
-                    print("Restart minimization!")
+                    if verbose:
+                        print("Restart minimization!")
                     self.CM = self.ConvergenceMonitor(
                         self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
                     trap_minimizer_options['callback'] = self.CM.monitor_convergence
@@ -393,26 +439,23 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
                     break
             else:
                 best_x, best_y = r2xy(res['x'])
-                idxs = np.union1d(np.where(best_x < self.x_min)
-                                  [0], np.where(np.abs(best_y) > self.x_max)[0])
+                idxs = np.where((best_x < self.x_min) | (best_x > self.x_max) |
+                                (best_y < self.y_min) | (best_y > self.y_max))[0]
                 if len(idxs) > 0 and (not suppress_warnings):
-                    print("Following electrons are outside the simulation domain")
-                    for i in idxs:
-                        print("(x,y) = (%.3f, %.3f) um" %
-                              (best_x[i] * 1E6, best_y[i] * 1E6))
+                    coordinates = ", ".join(f"({best_x[i] * 1E6:.3f}, {best_y[i] * 1E6:.3f})" for i in idxs)
+                    warnings.warn(f"{len(idxs)} electrons are outside the simulation domain, at (x, y) = {coordinates} um.",
+                                  QuantumElectronWarning, stacklevel=2)
                 # To skip the infinite while loop.
                 break
 
         if res['status'] > 0 and not (no_electrons_left) and not (suppress_warnings):
-            print("WARNING: Initial minimization did not converge!")
-            print(
-                f"Final L-inf norm of gradient = {np.amax(res['jac']):.2f} eV/m")
-            best_res = res
-            print(
-                "Please check your initial condition, are all electrons confined in the simulation area?")
+            warnings.warn(f"Initial minimization did not converge ({res['message']}). "
+                          f"Final L-inf norm of gradient = {np.max(np.abs(res['jac'])):.2f} eV/m. "
+                          "Please check your initial condition, are all electrons confined in the simulation area?",
+                          ConvergenceWarning, stacklevel=2)
 
         if len(self.trap_annealing_steps) > 0:
-            if verbose:
+            if verbose and res['status'] == 0:
                 print("SUCCESS: Initial minimization for Trap converged!")
                 # This maps the electron positions within the simulation domain
                 print("Perturbing solution %d times at %.2f K. (dx,dy) ~ (%.3f, %.3f) µm..."
@@ -430,16 +473,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             best_res = res
 
         if self.remove_unbound_electrons:
-            best_x, best_y = r2xy(best_res['x'])
-            idcs_x = np.where(np.logical_or(best_x < self.remove_bounds[0],
-                                            best_x > self.remove_bounds[1]))[0]
-            idcs_y = np.where(np.logical_or(best_y < self.remove_bounds[0],
-                                            best_y > self.remove_bounds[1]))[0]
-
-            all_idcs_to_remove = np.union1d(idcs_x, idcs_y)
-            best_x = np.delete(best_x, all_idcs_to_remove)
-            best_y = np.delete(best_y, all_idcs_to_remove)
-
+            best_x, best_y = self._remove_unbound(best_res['x'])
             best_res['x'] = xy2r(best_x, best_y)
 
         return best_res
@@ -475,9 +509,9 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         Args:
             list_of_voltages (list): A list of dictionaries representing the voltages at each frame.
-            list_of_electron_positions (list): A list of arrays representing the electron positions at each frame.
-            coor (tuple, optional): The coordinates of the center of the plot. Defaults to (0, 0).
-            dxdy (tuple, optional): The width and height of the plot. Defaults to (2, 2).
+            list_of_electron_positions (list): [m] A list of arrays representing the electron positions at each frame.
+            coor (tuple, optional): [microns] The coordinates of the center of the plot. Defaults to (0, 0).
+            dxdy (tuple, optional): [microns] The width and height of the plot. Defaults to (2, 2).
             frame_interval_ms (int, optional): The time interval between frames in milliseconds. Defaults to 10.
 
         Returns:
@@ -558,8 +592,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         """Animate the convergence data stored in the convergence helper class. 
 
         Args:
-            coor (tuple, optional): The coordinates of the center of the plot. Defaults to (0, 0).
-            dxdy (tuple, optional): The width and height of the plot. Defaults to (2, 2).
+            coor (tuple, optional): [microns] The coordinates of the center of the plot. Defaults to (0, 0).
+            dxdy (tuple, optional): [microns] The width and height of the plot. Defaults to (2, 2).
             frame_interval_ms (int, optional): Interval between frames in milliseconds. Defaults to 10.
 
         Returns:

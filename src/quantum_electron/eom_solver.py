@@ -7,7 +7,6 @@ from typing import List, Dict, Optional
 from matplotlib import pyplot as plt
 import matplotlib.animation as animation
 from matplotlib import patheffects as pe
-from IPython import display
 
 
 class EOMSolver:
@@ -75,7 +74,7 @@ class EOMSolver:
         https://journals.aps.org/prapplied/abstract/10.1103/PhysRevApplied.23.024001
 
         Args:
-            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            ri (ArrayLike): [m] Electron positions, in the form [x0, y0, x1, y1, ...]
             resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have La, Lb, Ca, Cb, Cdot, mode. Ltail is optional.
             Here La, Ca are the inductance and capacitance of the first resonator, Lb, Cb are the inductance and capacitance of the second resonator.
             Cdot is the coupling capacitance between the two resonators. The mode key sets the f0 parameter and is used in get_cavity_frequency_shift.
@@ -83,6 +82,9 @@ class EOMSolver:
         Returns:
             tuple[ArrayLike]: (kinetic matrix K aka [L], and mass matrix M aka [C]^-1) OR if Ltail is nonzero ([L]^-1 [C]^-1)
         """
+        if resonator_dict['mode'] not in ['comm', 'diff']:
+            raise ValueError(f"resonator_dict['mode'] = {resonator_dict['mode']!r} was not understood. Please specify either 'comm' or 'diff'.")
+
         Ca = resonator_dict['Ca']
         Cb = resonator_dict['Cb']
         Cdot = resonator_dict['Cdot']
@@ -131,11 +133,8 @@ class EOMSolver:
 
         if resonator_dict['mode'] == 'comm':
             self.f0 = self.f0_comm
-        elif resonator_dict['mode'] == 'diff':
-            self.f0 = self.f0_diff
         else:
-            print(
-                "'mode' key was not understood. Please specify either 'comm' or 'diff'.")
+            self.f0 = self.f0_diff
 
         num_electrons = int(len(ri) / 2)
         xe, ye = r2xy(ri)
@@ -177,33 +176,35 @@ class EOMSolver:
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye)
 
         np.fill_diagonal(XiXj, 1E-15)
-        tij = np.arctan(YiYj / XiXj)
+        # calculate_metrics returns XiXj[a, b] = x_b - x_a but YiYj[a, b] = y_a - y_b, so flip the sign of YiYj
+        # to obtain the angle of the separation vector. cos(2 tij) is insensitive to this, but sin(2 tij) is not.
+        tij = np.arctan(-YiYj / XiXj)
 
         # Remember to set the diagonal back to 0
         np.fill_diagonal(tij, 0)
         # We'll be dividing by rij, so to avoid raising warnings:
         np.fill_diagonal(rij, 1E-15)
 
-        if self.screening_length == np.inf:
+        if (not self.include_screening) or self.screening_length == np.inf:
             # print("Coulomb!")
             # Note that an infinite screening length corresponds to the Coulomb case. Usually it should be twice the
             # helium depth
-            kij_plus = 1 / 4. * q_e ** 2 / \
+            kij_plus = 1 / 2. * q_e ** 2 / \
                 (4 * np.pi * eps0) * (1 + 3 * np.cos(2 * tij)) / rij ** 3
-            kij_minus = 1 / 4. * q_e ** 2 / \
+            kij_minus = 1 / 2. * q_e ** 2 / \
                 (4 * np.pi * eps0) * (1 - 3 * np.cos(2 * tij)) / rij ** 3
-            lij = 1 / 4. * q_e ** 2 / \
+            lij = 1 / 2. * q_e ** 2 / \
                 (4 * np.pi * eps0) * 3 * np.sin(2 * tij) / rij ** 3
         else:
             # print("Yukawa!")
             rij_scaled = rij / self.screening_length
-            kij_plus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_plus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 + (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            kij_minus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_minus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 - (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            lij = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            lij = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (3 + 3 * rij_scaled + rij_scaled ** 2) * np.sin(2 * tij)
 
         np.fill_diagonal(kij_plus, 0)
@@ -236,7 +237,7 @@ class EOMSolver:
         plates of the capacitor C.
 
         Args:
-            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            ri (ArrayLike): [m] Electron positions, in the form [x0, y0, x1, y1, ...]
             resonator_dict (Dict): Dictionary containing the parameters of the resonator. If supplied, it must have f0, Z0 as keys.
             f0 is the frequency of the resonator, and Z0 is the impedance of the resonator.
 
@@ -289,14 +290,16 @@ class EOMSolver:
 
         # Set Xi - Xi to a finite value to avoid dividing by zero.
         np.fill_diagonal(XiXj, 1E-15)
-        tij = np.arctan(YiYj / XiXj)
+        # calculate_metrics returns XiXj[a, b] = x_b - x_a but YiYj[a, b] = y_a - y_b, so flip the sign of YiYj
+        # to obtain the angle of the separation vector. cos(2 tij) is insensitive to this, but sin(2 tij) is not.
+        tij = np.arctan(-YiYj / XiXj)
 
         # Remember to set the diagonal back to 0
         np.fill_diagonal(tij, 0)
         # We'll be dividing by rij, so to avoid raising warnings:
         np.fill_diagonal(rij, 1E-15)
 
-        if self.screening_length == np.inf:
+        if (not self.include_screening) or self.screening_length == np.inf:
             # print("Coulomb!")
             # Note that an infinite screening length corresponds to the Coulomb case. Usually it should be twice the
             # helium depth
@@ -309,13 +312,13 @@ class EOMSolver:
         else:
             # print("Yukawa!")
             rij_scaled = rij / self.screening_length
-            kij_plus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_plus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 + (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            kij_minus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_minus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 - (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            lij = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            lij = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (3 + 3 * rij_scaled + rij_scaled ** 2) * np.sin(2 * tij)
 
         np.fill_diagonal(kij_plus, 0)
@@ -403,9 +406,9 @@ class EOMSolver:
         """Plots the eigenvector at the electron positions.
 
         Args:
-            electron_positions (ArrayLike): Electron position array in length 2 * n_electrons. The order should be [x0, y0, x1, y1, ...]
+            electron_positions (ArrayLike): [m] Electron position array in length 2 * n_electrons. The order should be [x0, y0, x1, y1, ...]
             eigenvector (ArrayLike): Eigenvector to be plotted. Length should be 2 * n_electrons + 1, as a column output by solve_eom.
-            length (float, optional): Length of the eigenvector in units of microns. Defaults to 0.5.
+            length (float, optional): [microns] Length of the eigenvector. Defaults to 0.5.
             color (str, optional): Face color of the arrow. Defaults to 'k'.
         """
         e_x, e_y = r2xy(electron_positions)
@@ -449,8 +452,8 @@ class EOMSolver:
             fig (matplotlib.pyplot.figure): Matplotlib figure handle.
             axs_list (matplotlib.pyplot.axes): List of axes, e.g. for subplots.
             eigenvector_list (List[ArrayLike]): Eigenvector array. eigenvector_list[0] will be plot on axs_list[0] etc.
-            electron_positions (ArrayLike): Electron coordinates in the format [x0, y0, x1, y1, ...]
-            amplitude (float, optional): Amplitude of the motion in units of meters. Defaults to 0.5e-6.
+            electron_positions (ArrayLike): [m] Electron coordinates in the format [x0, y0, x1, y1, ...]
+            amplitude (float, optional): [m] Amplitude of the motion. Defaults to 0.5e-6.
             time_points (int, optional): Number of frames for one cycle (oscillation period). Defaults to 31.
             frame_interval_ms (int, optional): Interval between frames in milliseconds. Defaults to 10.
 
@@ -486,15 +489,21 @@ class EOMSolver:
         return animation.FuncAnimation(
             fig=fig, func=update, frames=time_points, interval=frame_interval_ms, repeat=True)
 
-    def show_animation(self, matplotlib_animation) -> display.display:
-        """Display an animation in a jupyter notebook.
+    def show_animation(self, matplotlib_animation) -> None:
+        """Display an animation in a jupyter notebook. Requires IPython.
 
         Args:
             matplotlib_animation (matplotlib.animation.FuncAnimation): animation object, for example from `animate_eigenvectors`
 
         Returns:
-            display.display: looped animation in html format.
+            None: the looped animation is displayed in html format.
         """
+        try:
+            from IPython import display
+        except ImportError as e:
+            raise ImportError("show_animation requires IPython. Install it with `pip install ipython`, "
+                              "or `pip install quantum_electron[notebooks]`.") from e
+
         # converting to an html5 video
         video = matplotlib_animation.to_html5_video()
 

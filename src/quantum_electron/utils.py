@@ -1,7 +1,6 @@
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import Dict, Optional, List
-import pyvista
+from typing import Dict, Optional, List, Union
 from shapely import Polygon
 import shapely.plotting
 from matplotlib import pyplot as plt
@@ -9,6 +8,7 @@ from scipy.constants import elementary_charge as qe, epsilon_0
 from scipy.constants import Boltzmann as kB
 import matplotlib
 import importlib
+from .coupling_constants import CouplingConstants, to_potential_dict
 
 
 def package_versions():
@@ -22,13 +22,19 @@ def select_outer_electrons(xi: ArrayLike, yi: ArrayLike, plot: bool = True, **kw
     useful for calculating the area of an ensemble.
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
         plot (bool, optional): Plot the polygon. Defaults to True.
 
     Returns:
-        tuple: Polygon points (x and y), polygon area
+        tuple: [microns] Polygon points (x and y), and polygon area [microns^2]. Note that the input is in meters.
     """
+    try:
+        import pyvista
+    except ImportError as e:
+        raise ImportError("select_outer_electrons requires pyvista. Install it with `pip install pyvista`, "
+                          "or `pip install quantum_electron[notebooks]`.") from e
+
     # There must be at least 2 electrons to define a surface
     if len(xi) > 2:
         points = np.c_[xi.reshape(-1), yi.reshape(-1),
@@ -67,8 +73,8 @@ def density_from_positions(xi: ArrayLike, yi: ArrayLike) -> float:
     """Electron density estimate calculated from the nearest neighbor distance
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
 
     Returns:
         float: Electron density in units of m^-2
@@ -91,8 +97,8 @@ def mean_electron_spacing(xi: ArrayLike, yi: ArrayLike) -> float:
     """Mean electron spacing calculated from the nearest neighbor distance
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
 
     Returns:
         float: Mean electron spacing in units of m
@@ -116,8 +122,8 @@ def gamma_parameter(xi: ArrayLike, yi: ArrayLike, T: float) -> float:
     For values below the critical value we have a liquid.
 
     Args:
-        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
-        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+        xi (ArrayLike): [m] electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): [m] electron y-positions np.array([y0, y1, ...])
         T (float): Temperature
 
     Returns:
@@ -126,23 +132,6 @@ def gamma_parameter(xi: ArrayLike, yi: ArrayLike, T: float) -> float:
     nearest_neighbor_distance = 1 / \
         np.sqrt(np.pi * density_from_positions(xi, yi))
     return qe ** 2 / (4 * np.pi * epsilon_0 * nearest_neighbor_distance) / (kB * T)
-
-
-def construct_symmetric_y(ymin: float, N: int) -> ArrayLike:
-    """
-    This helper function constructs a one-sided array from ymin to -dy/2 with N points.
-    The spacing is chosen such that, when mirrored around y = 0, the spacing is constant.
-
-    This requirement limits our choice for dy, because the spacing must be such that there's
-    an integer number of points in yeval. This can only be the case if
-    dy = 2 * ymin / (2*k+1) and Ny = ymin / dy - 0.5 + 1
-    yeval = y0, y0 - dy, ... , -3dy/2, -dy/2
-    :param ymin: Most negative value
-    :param N: Number of samples in the one-sided array
-    :return: One-sided array of length N.
-    """
-    dy = 2 * np.abs(ymin) / float(2 * N + 1)
-    return np.linspace(ymin, -dy / 2., int((np.abs(ymin) - 0.5 * dy) / dy + 1))
 
 
 def find_nearest(array: ArrayLike, value: float) -> int:
@@ -178,7 +167,7 @@ def xy2r(x: ArrayLike, y: ArrayLike) -> ArrayLike:
         raise ValueError("x and y must have the same length!")
 
 
-def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]) -> ArrayLike:
+def make_potential(potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltages: Dict[str, float]) -> ArrayLike:
     """Creates a numpy array potential based on an array of coupling coefficient arrays stored in potential_dict. 
     The returned potential values are positive for a positive voltage applied to the gate. Therefore, to transform
     the potential into potential energy, multiply with -1.
@@ -190,8 +179,9 @@ def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, flo
         applied to each electrode
 
     Returns:
-        ArrayLike: Inner product of the coupling coefficient arrays and the voltages. 
+        ArrayLike: Inner product of the coupling coefficient arrays and the voltages, indexed as [x, y].
     """
+    potential_dict = to_potential_dict(potential_dict)
 
     for k, key in enumerate(list(voltages.keys())):
         if k == 0:
@@ -202,7 +192,7 @@ def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, flo
     return potential
 
 
-def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], return_potential_value: bool = False) -> tuple[float, float]:
+def find_minimum_location(potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltages: Dict[str, float], return_potential_value: bool = False) -> tuple[float, float]:
     """Find the coordinates of the minimum energy point for a single electron.
 
     Args:
@@ -213,6 +203,7 @@ def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[s
     Returns:
         tuple[float, float]: (x_min, y_min, V_min) where the potential energy for a single electron is minimized. Units are in micron, eV.
     """
+    potential_dict = to_potential_dict(potential_dict)
 
     potential = make_potential(potential_dict, voltages)
     zdata = -potential.T
@@ -245,8 +236,17 @@ def crop_potential(x: ArrayLike, y: ArrayLike, U: ArrayLike, xrange: tuple, yran
 
 
 class PotentialVisualization:
-    def __init__(self, potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]):
-        self.potential_dict = potential_dict
+    def __init__(self, potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltages: Dict[str, float]):
+        """Class for plotting the potential energy landscape.
+
+        Args:
+            potential_dict (Union[Dict[str, ArrayLike], CouplingConstants]): Dictionary containing at least the keys also present in the voltages dictionary.
+            The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+            Alternatively, a CouplingConstants object (from quantum_electron or zeroheliumkit) with attributes x, y and data.
+            voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
+            applied to each electrode
+        """
+        self.potential_dict = to_potential_dict(potential_dict)
         self.voltage_dict = voltages
             
     def plot_coupling_constant_ratio(self, electrode1: str, electrode2: Optional[str], loc: tuple = (-1, 0), ax=None, coor: Optional[List[float]] = [0, 0], dxdy: List[float] = [1, 2], 
@@ -257,10 +257,10 @@ class PotentialVisualization:
         Args:
             electrode1 (str): Electrode name
             electrode2 (str): Electrode name, may be None. If None, only the coupling constant of electrode 1 is plotted.
-            loc (tuple, optional): Location where the ratio electrode1/electrode2 is evaluated. Defaults to (-1, 0).
+            loc (tuple, optional): [microns] Location where the ratio electrode1/electrode2 is evaluated. Defaults to (-1, 0).
             ax (_type_, optional): Matplotlib axes instance. If None, a new instance will be created. Defaults to None.
-            coor (Optional[List[float]], optional): Center for the 2D plot in units of microns. Defaults to [0, 0].
-            dxdy (List[float], optional): Extent (dx, dy) of the 2D plot in units of microns. Defaults to [1, 2].
+            coor (Optional[List[float]], optional): [microns] Center for the 2D plot. Defaults to [0, 0].
+            dxdy (List[float], optional): [microns] Extent (dx, dy) of the 2D plot. Defaults to [1, 2].
             figsize (tuple[float, float], optional): Matplotlib figure size in inches. Defaults to (7, 4).
             show_minimum (bool, optional): If True, it plots a star where the ratio is smallest. Defaults to True.
             contour_levels (ArrayLike, optional): Contour levels, must be a list. Defaults to [].
@@ -323,9 +323,9 @@ class PotentialVisualization:
         respective electrode. It also returns the values of the coupling constants at the location loc = (x, y) in a dictionary.
 
         Args:
-            loc (tuple, optional): Location to evaluate the coupling constants at (x, y) in micron. Defaults to (-1, 0).
-            plot_coor (tuple, optional): Center for each of the 2D plots. Defaults to (0, 0).
-            plot_dxdy (tuple, optional): Extent (width and height) in microns for each of the 2D plots. Defaults to (3., 2.).
+            loc (tuple, optional): [microns] Location to evaluate the coupling constants at (x, y). Defaults to (-1, 0).
+            plot_coor (tuple, optional): [microns] Center for each of the 2D plots. Defaults to (0, 0).
+            plot_dxdy (tuple, optional): [microns] Extent (width and height) for each of the 2D plots. Defaults to (3., 2.).
             clim (tuple, optional): Colorbar limits for each of the 2D plots. Defaults to (0, 1).
 
         Returns:
@@ -385,8 +385,8 @@ class PotentialVisualization:
 
         Args:
             ax (_type_, optional): Matplotlib axes object. If None, a new instance will be created. Defaults to None.
-            x (ArrayLike, optional): x values for the potential slice. Must be at least of length 1. Defaults to [].
-            y (ArrayLike, optional): y values for the potential slice. Must be at least of length 1. Defaults to [].
+            x (ArrayLike, optional): [microns] x values for the potential slice. Must be at least of length 1. Defaults to [].
+            y (ArrayLike, optional): [microns] y values for the potential slice. Must be at least of length 1. Defaults to [].
             axlims (Optional[tuple], optional): Limits in eV of the vertical axis of the plot. Defaults to None.
             figsize (tuple[float, float], optional): Figure size in inches. Defaults to (6, 3).
             print_voltages (bool, optional): Prints the voltages for each potential next to the plot. Defaults to True.
@@ -456,8 +456,8 @@ class PotentialVisualization:
         """Plot the potential energy as function of (x,y)
 
         Args:
-            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
-            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            coor (List[float, float], optional): [microns] Center of the solution window, this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): [microns] width of the solution window for x and y. Defaults to [1, 2].
             figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
         """
 

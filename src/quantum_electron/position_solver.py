@@ -159,8 +159,8 @@ class PositionSolver:
         This function is called in the case of periodic boundary conditions in the y direction.
 
         Args:
-            y (ArrayLike): 1D array of electron positions (y-coordinate)
-            xbounds (Optional[tuple], optional): y-domain boundaries. Defaults to None, in which case (self.y_min, self.y_max) is used.
+            y (ArrayLike): [m] 1D array of electron positions (y-coordinate)
+            ybounds (Optional[tuple], optional): [m] y-domain boundaries. Defaults to None, in which case (self.y_min, self.y_max) is used.
 
         Returns:
             ArrayLike: 1D array of electron positions (y-coordinate) mapped into the solution domain.
@@ -174,8 +174,8 @@ class PositionSolver:
         This function is called in the case of periodic boundary conditions in the x-domain.
 
         Args:
-            x (ArrayLike): 1D array of electron positions (x-coordinate)
-            xbounds (Optional[tuple], optional): x-domain boundaries. Defaults to None, in which case (self.x_min, self.x_max) is used.
+            x (ArrayLike): [m] 1D array of electron positions (x-coordinate)
+            xbounds (Optional[tuple], optional): [m] x-domain boundaries. Defaults to None, in which case (self.x_min, self.x_max) is used.
 
         Returns:
             ArrayLike: 1D array of electron positions (x-coordinate) mapped into the solution domain.
@@ -185,14 +185,14 @@ class PositionSolver:
         return xbounds[0] + (x - xbounds[0]) % (xbounds[1] - xbounds[0])
 
     def calculate_metrics(self, xi: ArrayLike, yi: ArrayLike) -> tuple:
-        """This function calculates the distances between electrons in the case of periodic boundary conditions. 
-        To deal with this, all electrons should first be mapped into the domain (self.x_min, self.x_max) and (self.y_min, self.y_max). 
-        To calculate the xi-xj, yi-yj and ri-rj we artificially move the electron positions and re-calculate 
-        the arrays. Finally we return the smallest ri-rj which can then be used to evaluate the electron-electron energy.
+        """This function calculates the pairwise separations between electrons, taking into account periodic boundary conditions.
+        Along each periodic direction the separation is wrapped into [-L/2, L/2] (minimum image convention), where L is the
+        size of the domain (self.x_min, self.x_max) or (self.y_min, self.y_max). Since |ri-rj|^2 = (xi-xj)^2 + (yi-yj)^2,
+        wrapping each direction independently yields the shortest ri-rj, which is used to evaluate the electron-electron energy.
 
         Args:
-            xi (ArrayLike): 1D array of electron positions (x-coordinate)
-            yi (ArrayLike): 1D array of electron positions (y-coordinate)
+            xi (ArrayLike): [m] 1D array of electron positions (x-coordinate)
+            yi (ArrayLike): [m] 1D array of electron positions (y-coordinate)
 
         Returns:
             tuple: Three pairwise distance metrics (2D arrays): xi-xj, yi-yj, ri-rj
@@ -203,41 +203,15 @@ class PositionSolver:
         XiXj = Xi - Xj
         YiYj = Yi - Yj
 
-        Rij_standard = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+        if 'x' in self.periodic_boundaries:
+            Lx = self.x_max - self.x_min
+            XiXj -= Lx * np.round(XiXj / Lx)
 
         if 'y' in self.periodic_boundaries:
-            Yi_shifted = Yi.copy()
-            Yi_shifted[Yi_shifted >
-                       self.y_center] -= np.abs(self.y_max - self.y_min)
-            Yj_shifted = Yi_shifted.T
-            YiYj_shifted = Yi_shifted - Yj_shifted
+            Ly = self.y_max - self.y_min
+            YiYj -= Ly * np.round(YiYj / Ly)
 
-            Rij_shifted = np.sqrt((XiXj) ** 2 + (YiYj_shifted) ** 2)
-
-            # Calculate the pairwise minimum of the shifted and standard expression.
-            Rij = np.minimum(Rij_standard, Rij_shifted)
-
-            # Use shifted y-coordinate only in this case:
-            np.copyto(YiYj, YiYj_shifted, where=Rij_shifted < Rij_standard)
-
-        if 'x' in self.periodic_boundaries:
-            # For periodic boundary conditions in the x-direction, if electrons move out of the simulation domain (x_min, x_max), they'll come back around.
-            Xi_shifted = Xi.copy()
-            Xi_shifted[Xi_shifted >
-                       self.x_center] -= np.abs(self.x_max - self.x_min)
-            Xj_shifted = Xi_shifted.T
-            XiXj_shifted = Xi_shifted - Xj_shifted
-
-            Rij_shifted = np.sqrt((XiXj_shifted) ** 2 + (YiYj) ** 2)
-
-            # Calculate the pairwise minimum of the shifted and standard expression.
-            Rij = np.minimum(Rij_standard, Rij_shifted)
-
-            # Use shifted y-coordinate only in this case:
-            np.copyto(XiXj, XiXj_shifted, where=Rij_shifted < Rij_standard)
-
-        if self.periodic_boundaries == []:
-            Rij = Rij_standard
+        Rij = np.sqrt(XiXj ** 2 + YiYj ** 2)
 
         return XiXj, YiYj, Rij
 
@@ -245,8 +219,8 @@ class PositionSolver:
         """Returns the electrostatic potential at the coordinates xi, yi.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: Electrostatic energy at coordinates xi, yi in units of electronvolts.
@@ -264,8 +238,8 @@ class PositionSolver:
         the sum of the static energy of the n particles in the potential.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             float: Total electrostatic energy of the system in units of Joules.
@@ -282,8 +256,8 @@ class PositionSolver:
         np.sum(Vee(xi, yi)) gives the total interaction energy of the system (without double counting).
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
             eps (float, optional): _description_. Defaults to 1E-15.
 
         Returns:
@@ -316,7 +290,7 @@ class PositionSolver:
         The x-coordinates are thus given by the even elements of r: r[::2], whereas the y-coordinates are the odd ones: r[1::2]
 
         Args:
-            r (ArrayLike): r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
+            r (ArrayLike): [m] r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
 
         Returns:
             float: Scalar with the total energy of the system in units of electron volts.
@@ -337,8 +311,8 @@ class PositionSolver:
         """Calculate the derivative of the electrostatic potential in the x-direction.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: First derivative of the electrostatic potential in the x-direction.
@@ -354,8 +328,8 @@ class PositionSolver:
         This is used as input for the EOMSolver class (curv_xx)
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: Second derivative of the electrostatic potential in the x-direction.
@@ -370,8 +344,8 @@ class PositionSolver:
         """Calculate the derivative of the electrostatic potential in the y-direction.
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: First derivative of the electrostatic potential in the y-direction.
@@ -387,8 +361,8 @@ class PositionSolver:
         This is used as input for the EOMSolver class (curv_yy)
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
 
         Returns:
             ArrayLike: Second derivative of the electrostatic potential in the y-direction.
@@ -404,8 +378,8 @@ class PositionSolver:
         This is used as input for the EOMSolver class (curv_xy)
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array or float
 
         Returns:
             ArrayLike: Cross derivative of the electrostatic potential in the x and y directions.
@@ -421,8 +395,8 @@ class PositionSolver:
         """Derivative of the electron-electron interaction term
 
         Args:
-            xi (ArrayLike): a 1D array, or float
-            yi (ArrayLike): a 1D array, or float
+            xi (ArrayLike): [m] a 1D array, or float
+            yi (ArrayLike): [m] a 1D array, or float
             eps (float, optional): A small but non-zero number to avoid triggering Warning message. Exact value is irrelevant. Defaults to 1E-15.
 
         Returns:
@@ -473,7 +447,7 @@ class PositionSolver:
          the scipy minimizer, which typically helps to converge to the ground state faster.
 
         Args:
-            r (ArrayLike): r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
+            r (ArrayLike): [m] r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
 
         Returns:
             float: 1D array of length len(r), where grad_total = np.array([dV/dx|r0, dV/dy|r0, ...])
@@ -505,7 +479,7 @@ class PositionSolver:
 
     def single_thread(self, iteration, electron_initial_positions, T, cost_function, minimizer_dict, maximum_dx, maximum_dy):
         xi, yi = r2xy(electron_initial_positions)
-        np.random.seed(np.int(time.time()) + iteration)
+        np.random.seed(int(time.time()) + iteration)
         xi_prime = xi + \
             self.thermal_kick_x(
                 xi, yi, T, maximum_dx=maximum_dx) * np.random.randn(len(xi))
@@ -532,7 +506,6 @@ class PositionSolver:
         """
         electron_initial_positions = solution_data_reference['x']
         best_result = solution_data_reference
-        pool = multiprocessing.Pool()
 
         tasks = []
         iteration = 0
@@ -541,13 +514,14 @@ class PositionSolver:
             tasks.append((iteration, electron_initial_positions, T,
                          cost_function, minimizer_dict, maximum_dx, maximum_dy,))
 
-        results = [pool.apply_async(self.single_thread, t) for t in tasks]
-        for result in results:
-            res = result.get()
+        with multiprocessing.Pool() as pool:
+            results = [pool.apply_async(self.single_thread, t) for t in tasks]
+            for result in results:
+                res = result.get()
 
-            if res['status'] == 0 and res['fun'] < best_result['fun']:
-                # cprint("\tNew minimum was found after perturbing!", "green")
-                best_result = res
+                if res['status'] == 0 and res['fun'] < best_result['fun']:
+                    # cprint("\tNew minimum was found after perturbing!", "green")
+                    best_result = res
 
         # Nothing has changed by perturbing the reference solution
         if (best_result['x'] == solution_data_reference['x']).all():
@@ -571,8 +545,8 @@ class PositionSolver:
             N_perturbations (int): Number of allowed perturbations to find a new minimum
             T (float): Temperature to perturb the system at. This is used to convert to a motion.
             solution_data_reference (dict): Output of scipy.optimize.minimize
-            maximum_dx (Optional[float], optional): Maximum perturbation in the x-direction units of meters. Defaults to None.
-            maximum_dy (Optional[float], optional): Maximum perturbation in the y-direction units of meters. . Defaults to None.
+            maximum_dx (Optional[float], optional): [m] Maximum perturbation in the x-direction. Defaults to None.
+            maximum_dy (Optional[float], optional): [m] Maximum perturbation in the y-direction. Defaults to None.
             do_print (bool, optional): Print the status of the trials. Defaults to True.
 
         Returns:

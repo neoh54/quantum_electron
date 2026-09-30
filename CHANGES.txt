@@ -1,0 +1,527 @@
+CHANGES
+=======
+
+Newest entries first. Each entry: what changed, why, affected files, how it was verified.
+
+
+2026-09-30  Units: documented convention, radius_um
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Documented the unit convention
+   - Meters (SI) for electron coordinates and everything compared to them
+     (r / res['x'], initial conditions, remove_bounds, max_x/y_displacement,
+     count_electrons_in_dot bounds, animation amplitude); microns for the
+     potential map and plot windows (xlist/ylist, CouplingConstants x/y,
+     coor, dxdy, loc, center, barrier_location, InitialCondition shapes and
+     spacings). This is what the code already did, apart from item 2.
+   - README: new "Units" section; the to-do item now points to it.
+   - Docstrings: every length argument of the public API is tagged [m] or
+     [microns] (about 80 argument lines in eom_solver, full_model,
+     initial_condition, position_solver, utils). Each unit was checked
+     against the code (e.g. plot_potential_slice x/y and get_dot_area
+     barrier_location are compared to xlist -> microns; map_x_into_domain
+     bounds are compared to the grid in meters -> m), not inferred from the
+     argument name. Older unit phrases made redundant by the tag removed.
+   - Return values: get_electron_positions ('x' [m], 'jac' [eV/m], 'fun'
+     [eV]); select_outer_electrons returns microns / microns^2 although its
+     input is in meters (now stated).
+   - Docstring fixes found on the way: map_y_into_domain documented its
+     argument as xbounds (is ybounds); Ey_up/Ey_down said "where Ex should
+     be evaluated".
+
+2. generate_initial_condition: radius_um replaces radius
+   Files: src/quantum_electron/full_model.py
+   - It was the only call mixing units: center in microns, radius in meters
+     (default 0.18e-6). New keyword radius_um (microns, default 0.18).
+   - radius (meters) still works, positionally or by keyword, and issues a
+     DeprecationWarning; passing both raises TypeError. Results identical.
+   - Docstring now documents center and radius (they were missing).
+   - examples/01_square_well: radius=0.2e-6 -> radius_um=0.2.
+
+3. Tests: tests/test_initial_condition.py
+   - radius_um geometry, deprecated keyword and positional radius give the
+     same result and warn, default radius, TypeError for both.
+
+Verification: fem2, 51 passed, 1 deselected; ruff blocking checks pass.
+
+
+2026-09-30  Warnings instead of printed messages
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. New module src/quantum_electron/exceptions.py
+   - QuantumElectronWarning(UserWarning): base class for the package.
+   - ConvergenceWarning(QuantumElectronWarning): minimization did not
+     converge.
+   - Both exported from quantum_electron. Filter with the warnings module,
+     e.g. warnings.simplefilter("ignore", QuantumElectronWarning) or
+     warnings.simplefilter("error", ConvergenceWarning).
+
+2. Problem reports now use warnings.warn (stacklevel points at the caller)
+   - FullModel.get_electron_positions: initial condition does not match
+     n_electrons; unbound electrons removed; electrons outside the domain
+     (one warning listing all coordinates); initial minimization did not
+     converge (ConvergenceWarning, now includes scipy's message).
+   - InitialCondition.make_by_chemical_potential: could not fit all
+     electrons.
+   - suppress_warnings keeps working (no warnings issued); docstring updated.
+   - Progress output behind verbose / do_print (convergence monitor,
+     annealing messages) and package_versions() are still printed.
+     "Restart minimization!" is now printed only with verbose=True.
+
+3. Bugs fixed along the way (all in get_electron_positions unless noted)
+   - With suppress_warnings=True and remove_unbound_electrons=True, the
+     minimization was never restarted after removing unbound electrons:
+     the removal message and the restart decision shared one `if`, so
+     silencing messages changed the result. Confirmed on the previous code
+     (minimize called with [3] electrons instead of [3, 2]).
+   - verbose=True printed "SUCCESS: Initial minimization for Trap
+     converged!" even when it had not converged.
+   - The reported "L-inf norm of gradient" was np.amax(jac), ignoring large
+     negative components; now np.max(np.abs(jac)).
+   - no_electrons_left is initialized before the loop (it was only defined
+     inside it; worked only via short-circuit evaluation).
+   - EOMSolver.setup_eom_coupled_lc: an unknown resonator_dict['mode'] only
+     printed a message and continued, leaving self.f0 unset or stale from a
+     previous call, so get_cavity_frequency_shift could silently return a
+     wrong shift. Now raises ValueError before any computation.
+
+4. README: new "Warnings" section.
+
+5. Tests: tests/test_warnings.py (new)
+   - ConvergenceWarning (forced with a 1-iteration minimizer), silenced by
+     suppress_warnings, turned into an error by a filter.
+   - Initial condition / n_electrons mismatch; could not fit all electrons.
+   - Unbound removal restarts the minimization independent of
+     suppress_warnings (deterministic fake minimizer, counts the calls).
+   - Invalid resonator mode raises ValueError.
+
+Verification: fem2, 50 passed, 1 deselected.
+
+
+2026-09-30  Rename electron_counter -> full_model; CI with uv, ruff, Python matrix
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Renamed src/quantum_electron/electron_counter.py -> full_model.py
+   - The module contains FullModel; the old name no longer described it.
+     __init__.py imports from .full_model; `from quantum_electron import
+     FullModel` is unchanged.
+   - electron_counter.py is kept as a small deprecation shim: it re-exports
+     FullModel and emits a DeprecationWarning, so existing
+     `from quantum_electron.electron_counter import FullModel` imports and
+     pickled FullModel objects keep working. Can be deleted in a future
+     release.
+   - Test: tests/test_imports.py (old path works, warns, same class).
+
+2. CI (.github/workflows/python-app.yml) rewritten
+   - Two jobs: `lint` and `test`.
+   - Actions updated: actions/checkout@v3 -> @v7, actions/setup-python@v3
+     replaced by astral-sh/setup-uv@v10 (latest releases: v7.0.1, v10.2.0).
+   - Test matrix: Python 3.10, 3.11, 3.12, 3.13 (fail-fast off); installs
+     with `uv sync --extra test`, runs `uv run pytest -m ""` (includes slow).
+   - Lint: flake8 replaced by ruff (via uvx). Same policy as before: syntax
+     errors / undefined names (E9, F63, F7, F82) fail the build, all other
+     findings are reported only. Now lints tests/ as well as src/.
+   - Baseline (ruff 0.16.9): blocking checks pass; 117 report-only findings,
+     mostly annotation style (UP045/UP006/UP007) and import order (I001),
+     also 14 unused imports (F401) and 7 mutable default arguments (B006).
+   - No uv.lock is committed, so CI resolves the newest versions each run.
+     If uv.lock is committed later, use `uv sync --locked --extra test`.
+
+3. pyproject.toml / README
+   - dev group: flake8 -> ruff. [tool.ruff] line-length = 127 (as flake8).
+   - README lists ruff among the dev tools.
+
+Verification:
+- fem2: 43 passed, 1 deselected.
+- ruff blocking checks pass; workflow YAML parses.
+- Local simulation of the CI test job (copy of the repo in a scratch dir,
+  `uv sync --extra test` + `uv run pytest -m ""`):
+  Python 3.11, 3.12, 3.13: 43 passed, 1 skipped (zeroheliumkit cross-check).
+  Python 3.10: uv resolves scipy 1.15.3 (last release supporting 3.10),
+  whose macOS wheel fails to load on this machine (macOS 27, dyld:
+  "__DATA/__thread_bss has a zero-fill section type"); `import
+  scipy.sparse.linalg` fails on its own, so this is a local macOS/scipy
+  issue, not a code issue, and does not affect CI on ubuntu-latest.
+  Re-run on Python 3.10 with conda-forge scipy 1.10.1 / numpy 1.24.3
+  (throwaway venv on the cad env's interpreter): 43 passed, 1 skipped,
+  which also covers numpy 1.x.
+
+
+2026-09-30  Notebook outputs out of git, slow tests, optional dependencies
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. nbstripout git filter for notebooks
+   - .gitattributes (new): *.ipynb filter=nbstripout, diff=ipynb.
+   - Registered locally with `nbstripout --install --attributes
+     .gitattributes` (nbstripout 0.9.1 installed into conda env fem2). This
+     wrote filter.nbstripout.* and diff.ipynb.textconv to .git/config,
+     pointing at ~/miniconda3/envs/fem2/bin/python, with
+     filter.nbstripout.required = true (git errors if that python or
+     nbstripout goes missing; re-run `nbstripout --install` from another
+     env to repoint it).
+   - Each clone must run `nbstripout --install` once (README, Contributing).
+   - The existing notebooks in the index still contain outputs; they are
+     stripped when next staged. To strip all of them at once:
+     git add --renormalize examples/
+     Stripped sizes: ~10 MB total -> ~265 KB; all stripped notebooks
+     validated with nbformat.
+   - Trade-off: notebooks viewed on GitHub will no longer show plots.
+
+2. Slow tests deselected by default
+   Files: pyproject.toml, tests/test_performance.py
+   - New marker `slow`; addopts = "-m 'not slow'". test_performance (28 s
+     of the 32 s suite) is marked slow. `pytest` now takes ~3 s;
+     `pytest -m slow` / `pytest -m ""` run the slow / all tests.
+   - CI runs everything (`pytest -m ""`), since test_performance also checks
+     convergence up to 400 electrons.
+
+3. Optional dependencies
+   Files: pyproject.toml, src/quantum_electron/utils.py,
+          src/quantum_electron/eom_solver.py, .github/workflows/python-app.yml
+   - Core dependencies: numpy, scipy, matplotlib, shapely>=2.0,
+     scikit-image. Removed from core: pyvista, IPython, alive_progress.
+   - pyvista is imported inside utils.select_outer_electrons, IPython inside
+     EOMSolver.show_animation; both raise ImportError with an install hint
+     when missing. show_animation's return annotation was display.display
+     (needed the module-level import); it returns None.
+   - Extras: test = pytest, alive_progress (test_performance imports it);
+     notebooks = jupyter, ipython, pyvista, alive_progress, sympy.
+     97_transmission_line additionally needs scikit-rf, scqubits,
+     ipywidgets, tqdm (not included).
+   - uv dev group: pytest, alive_progress, flake8, nbstripout.
+   - CI installs ".[test]" (plain "." no longer brings alive_progress).
+   - README: notebooks extra, nbstripout setup, slow tests.
+
+Verification:
+- fem2: `pytest` 42 passed, 1 deselected (2.8 s); `pytest -m slow` 1 passed.
+- Fresh uv venv with core dependencies only: `import quantum_electron`
+  works without pyvista, IPython, alive_progress; select_outer_electrons and
+  show_animation raise the ImportError hints. With ".[test]": 41 passed,
+  1 skipped (zeroheliumkit cross-check), 1 deselected.
+
+
+2026-09-30  src layout and pyproject.toml (pip and uv)
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Moved the package: quantum_electron/ -> src/quantum_electron/
+   - Plain mv (not git mv); git shows it as deletions plus untracked files
+     until staged. Earlier CHANGES entries refer to the old paths.
+   - With the src layout, tests and notebooks always import the installed
+     package, never an accidental copy on the working directory path.
+
+2. pyproject.toml replaces setup.py (deleted)
+   - Build backend setuptools>=64 (PEP 660 editable installs).
+   - Version read from src/quantum_electron/_version.py
+     (tool.setuptools.dynamic), so there is still one place to bump it.
+   - requires-python >= 3.10 (dataclass(slots=True) in coupling_constants).
+   - Dependencies as before, shapely pinned >= 2.0 (top-level
+     `from shapely import Polygon` needs it).
+   - Extra `test` = pytest  ->  pip install -e ".[test]"
+   - Dependency group `dev` = pytest, flake8  ->  installed by `uv sync`
+   - [tool.pytest.ini_options] testpaths = ["tests"].
+
+3. Other files
+   - .github/workflows/python-app.yml: flake8 now lints src/quantum_electron.
+   - README.md: installation with pip or uv, `uv run pytest`.
+   - _version.py: comment updated (setup.py -> pyproject.toml).
+   - Removed the stale, git-ignored quantum_electron.egg-info/ at the repo
+     root (left over from the old setup.py install).
+
+Verification:
+- Fresh uv venv (Python 3.13): `uv pip install -e ".[test]"`, imports from
+  src/, 42 passed, 1 skipped (zeroheliumkit cross-check; zhk not installed).
+- `uv build`: wheel contains all 8 modules.
+- conda env fem2: the old editable install broke with the move
+  (ModuleNotFoundError) and was reinstalled with `pip install -e .`;
+  43 passed. Notebooks 00_potential_inspection and 00_harmonic_well run.
+- Note: the first `uv sync` / `uv run` will create .venv/ (git-ignored) and
+  uv.lock in the repo root.
+
+
+2026-09-30  InitialCondition.random_particles
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. New method InitialCondition.random_particles(polygon, n, min_dist,
+   rng=None, max_tries=100_000, keep_off_boundary=False)
+   Files: quantum_electron/initial_condition.py
+   - Places n electrons at random inside a shapely polygon, with every pair
+     at least min_dist apart (rejection sampling). keep_off_boundary=True
+     also keeps electrons >= min_dist/2 from the polygon edge. rng accepts a
+     seed or a numpy Generator for reproducible initial conditions.
+   - Algorithm as provided by the user; adapted to the conventions of the
+     other make_* methods: polygon and min_dist in microns, returns
+     [x0, y0, x1, y1, ...] in meters, ready for get_electron_positions.
+   - Raises ValueError if the (buffered) polygon is empty, RuntimeError if
+     fewer than n electrons fit within max_tries trial points.
+
+2. Tests: tests/test_initial_condition.py (new)
+   - Non-convex L-shaped polygon: count, containment, edge distance with
+     keep_off_boundary, pairwise spacing >= min_dist, reproducibility.
+   - Both error cases.
+   - Output used directly as initial condition for get_electron_positions.
+
+Verification: full pytest suite passes (43 tests) in conda env fem2.
+
+
+2026-09-30  Fixed example notebooks 03 and 98
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. examples/03_periodic_boundaries.ipynb, cell 21 (row-structure phase diagram)
+   - make_rectangular was called with n_electrons (the whole array of
+     electron numbers) instead of the loop variable n_e, raising
+     "TypeError: only integer scalar arrays can be converted to a scalar
+     index". Now n_electrons=n_e.
+   - Note: the full sweep is 35 electron numbers x 101 voltages = 3535
+     minimizations, which takes several hours.
+
+2. examples/98_electron_capacitance.ipynb, cell 60
+   - fig.savefig wrote to a hardcoded path on the original author's machine
+     (/Users/gerwinkoolstra/Downloads/fig2a.pdf), raising FileNotFoundError.
+     Commented out, saving relative to the notebook if re-enabled:
+     # fig.savefig("fig2a.pdf", ...)
+
+Only these source lines changed; stored outputs are untouched.
+
+Verification (scratch copies, fem2 env): 98_electron_capacitance now runs
+end to end. 03_periodic_boundaries not yet re-verified (run stopped at the
+user's request; to be checked after upcoming changes).
+
+
+2026-09-30  FullModel accepts CouplingConstants; FreeFem 2Dmap reader
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. New module quantum_electron/coupling_constants.py
+   - CouplingConstants: dataclass (x, y, data) with the same fields and
+     conventions as zeroheliumkit.fem.fieldreader.CouplingConstants:
+     x, y in microns, data[electrode] indexed as [y, x], shape (ny, nx).
+   - read_ff_output(filename, ff_type): parser for FreeFem '2Dmap' and
+     '2Dslices' text output (as provided by the user), with ff_types and
+     flatten defined alongside it.
+   - load_coupling_constants(filename): reads a '2Dmap' file into a
+     CouplingConstants. The file stores arrays indexed as [x, y] (checked on
+     the non-square nat_comm_dot_zoomed_in.txt: 251 x-points, 501 y-points),
+     so they are transposed to [y, x].
+   - to_potential_dict(obj): converts a CouplingConstants (this package or
+     zeroheliumkit; matched on the attributes x, y, data, so zeroheliumkit
+     is not imported or required) into the internal potential_dict with
+     arrays indexed as [x, y]. A dict is returned unchanged. Raises on
+     masked arrays (splines cannot interpolate them; zeroheliumkit's
+     make_masked produces these) and on arrays whose shape is not
+     (len(y), len(x)).
+   - Exported from quantum_electron: CouplingConstants,
+     load_coupling_constants, to_potential_dict.
+
+2. Constructors accept either a potential_dict or a CouplingConstants
+   Files: quantum_electron/electron_counter.py (FullModel),
+          quantum_electron/utils.py (PotentialVisualization, make_potential,
+          find_minimum_location), quantum_electron/initial_condition.py
+          (InitialCondition)
+   - Conversion happens once, at construction; internally everything still
+     uses potential_dict (the ~90 uses of potential_dict['xlist'] etc. are
+     unchanged), and self.potential_dict is always a dict.
+   - The parameter is still named potential_dict, so existing calls such as
+     FullModel(potential_dict=...) keep working.
+
+3. Example notebooks no longer need zeroheliumkit
+   Files: examples/00_potential_inspection, 05_long_channel,
+          06_single_electron_trap
+   - Replaced FieldAnalyzer((file, 'phi', '2Dmap')) / phi.phi (old
+     zeroheliumkit API, removed in zeroheliumkit 2f89904) with
+     load_coupling_constants(file). Objects are passed directly to
+     FullModel / PotentialVisualization / InitialCondition; where the
+     notebook indexes the dict itself, to_potential_dict is used.
+   - Updated the markdown notes that said zeroheliumkit must be installed.
+   - Only cell sources changed; stored outputs are from the previous runs.
+   - Removed the leftover sys.path.append("/Volumes/EeroQ/lib/zeroheliumkit")
+     from 06.
+
+4. README: "Getting started" documents both input formats and
+   load_coupling_constants.
+
+5. Tests: tests/test_coupling_constants.py (new)
+   - Non-square synthetic well at (0.6, -0.3) um: same V(x, y) from dict and
+     from CouplingConstants, and one electron settles at (0.6, -0.3), not
+     at the swapped coordinates.
+   - load_coupling_constants on the non-square example file gives the same
+     potential as the raw FreeFem dictionary (the old workflow).
+   - Cross-check with zeroheliumkit itself: FieldAnalyzer(cc).potential
+     ([y, x]) equals the transpose of our potential ([x, y]). Skipped when
+     zeroheliumkit is not installed.
+   - Errors for masked arrays, wrong shapes, wrong type.
+
+Verification: full pytest suite passes (39 tests) in conda env fem2, with
+zeroheliumkit installed (so the cross-check ran).
+Executed all example notebooks (scratch copies, fem2 env):
+- Run end to end: 00_harmonic_well, 00_potential_inspection (failed before
+  this change), 01, 02, 04, 05_long_channel, 06_single_electron_trap
+  (failed before this change), 99.
+- Failures unrelated to this change (pre-existing, notebooks not edited):
+  03_periodic_boundaries cell 21 passes the array n_electrons instead of
+  the loop variable n_e to make_rectangular (cell was never executed in
+  the saved notebook); the two long sweeps before it run fine.
+  98_electron_capacitance saves a figure to a hardcoded path
+  (/Users/gerwinkoolstra/Downloads/fig2a.pdf); 30 of 38 code cells ran.
+  97_transmission_line hangs in headless execution (interactive ipywidgets,
+  scikit-rf; uses nothing from quantum_electron except package_versions);
+  stopped after ~39 min.
+
+
+2026-09-30  Removed the Schrodinger solver (package is classical only)
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Deleted quantum_electron/schrodinger_solver.py
+   - Removed classes Schrodinger, Schrodinger2D, SingleElectron and
+     QuantumAnalysis (single-electron quantum spectrum, anharmonicity,
+     resonator coupling g_ij).
+   - quantum_electron/__init__.py: dropped `from .schrodinger_solver import
+     QuantumAnalysis`. Public API is now FullModel, PotentialVisualization,
+     package_versions.
+   - quantum_electron/utils.py: removed construct_symmetric_y, which was only
+     used by the Schrodinger solver.
+
+2. Updated references
+   - examples/00_harmonic_well, 01_square_well, 04_time_dynamics,
+     06_single_electron_trap: removed the unused QuantumAnalysis import (none
+     of the notebooks called it); removed a commented-out QuantumAnalysis
+     line in 06. Only the import line / comment changed; outputs untouched.
+   - README.md: to-do "Split off the Schrodinger solver?" marked done.
+   - setup.py unchanged: the solver needed no extra dependencies.
+
+Verification: no remaining references (grep over .py, .ipynb, .md);
+`import quantum_electron` works; no undefined names in any module;
+full pytest suite passes (35 tests). Executed the edited notebooks
+(scratch copies, fem2 env): 00, 01 and 04 run end to end. 06 stops at
+cell 3, unrelated to this change: FieldAnalyzer from the installed
+ZeroHeliumKit now expects a CouplingConstants object instead of the
+(file, 'phi', '2Dmap') tuple the notebook passes. The cells of 06 after
+that point were therefore not executed.
+
+
+2026-09-30  EOM xy-coupling sign, 2D periodic boundaries, electron removal,
+            dot area, dependencies
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Fixed sign of the xy cross coupling between electron pairs in the EOM
+   (found while working on item 2; not in the original issue list)
+   Files: quantum_electron/eom_solver.py (setup_eom, setup_eom_coupled_lc)
+   - calculate_metrics returns XiXj[a, b] = x_b - x_a but
+     YiYj[a, b] = y_a - y_b (a consequence of np.meshgrid). grad_Vee accounts
+     for this, but the EOM computed tij = arctan(YiYj / XiXj) = -theta,
+     flipping sin(2 theta) and thus the sign of every pairwise xy term lij.
+     cos(2 theta), and hence the xx and yy blocks, were unaffected.
+   - Now tij = arctan(-YiYj / XiXj).
+   - Impact: mode frequencies and eigenvectors for any cluster whose pairs
+     are not aligned with the x or y axis (i.e. most 2D clusters), for both
+     Coulomb and Yukawa. Before the fix the EOM stiffness matrix differed
+     from the finite-difference Hessian of the energy by 76% (3 electrons
+     in a rotated anisotropic trap); after the fix by ~1e-6.
+
+2. Fixed pair distances with periodic boundaries in both x and y
+   Files: quantum_electron/position_solver.py (calculate_metrics)
+   - The x branch recomputed Rij against the unshifted distance and
+     discarded the y-wrapped minimum. Replaced the shift/min/copyto logic
+     with the standard minimum image convention per axis:
+     d -= L * round(d / L). Identical results for a single periodic axis.
+   - Note: only the nearest image is included (no Ewald sum), as before.
+
+3. Removal of unbound electrons now uses separate x and y bounds
+   Files: quantum_electron/electron_counter.py (FullModel.__init__,
+          new FullModel._remove_unbound, get_electron_positions)
+   - remove_bounds was a single (min, max) applied to both x and y, and its
+     default was 95% of the x range only; in a long narrow channel,
+     electrons escaping in y were never removed.
+   - remove_bounds now accepts ((xmin, xmax), (ymin, ymax)); the old
+     (min, max) form is still accepted and applied to both axes. The default
+     is 95% of the domain in each direction, about the domain center (same
+     as before for x on symmetric domains).
+   - The duplicated removal code is replaced by the helper _remove_unbound.
+
+4. Out-of-domain diagnostic uses the correct bounds
+   Files: quantum_electron/electron_counter.py (get_electron_positions)
+   - Compared |y| against x_max and ignored x > x_max. Now checks x and y
+     against their own domain limits. Print-only; results were unaffected.
+
+5. get_dot_area picks the contour around the potential minimum
+   Files: quantum_electron/electron_counter.py (get_dot_area)
+   - Previously used whichever contour skimage returned last. Now it uses
+     the smallest contour enclosing the minimum (find_minimum_location), or
+     the largest contour if none encloses it.
+   - Added an explicit `import shapely.plotting`. Hardening only: in the
+     fem2 env the submodule was already loaded indirectly, so plot=True did
+     not actually crash there.
+
+6. Declared core dependencies
+   Files: setup.py
+   - Added numpy, scipy, matplotlib to install_requires, and
+     extras_require={'test': ['pytest']}.
+
+7. Tests
+   Files: tests/test_eom.py (new test_stiffness_matrix_equals_hessian),
+          tests/test_periodic.py (new), tests/test_electron_counter.py (new)
+   - EOM stiffness matrix vs finite-difference Hessian (setup_eom and the
+     electron block of setup_eom_coupled_lc; Coulomb and Yukawa).
+   - calculate_metrics vs brute-force image search for [], [x], [y], [x, y].
+   - remove_bounds default / legacy format; get_dot_area with two wells.
+
+Verification: full pytest suite passes (35 tests) in conda env fem2.
+The new tests were also run against the previous code (HEAD) and fail
+there as expected: Hessian (both), periodic [x, y], remove_bounds (both),
+dot area. flake8 is not installed in fem2; ran py_compile instead.
+
+
+2026-09-30  EOM interaction prefactor, screening consistency, np.int crash
+--------------------------------------------------------------------------
+(committed as ebb4b75 on branch fix-eom-prefactors)
+
+1. Fixed electron-electron stiffness prefactor in the equations of motion
+   Files: quantum_electron/eom_solver.py (setup_eom, setup_eom_coupled_lc)
+   - The Hessian of the pairwise interaction phi(r) = A/r is
+     phi_xx = A/(2 r^3) * (1 + 3 cos 2theta); the 1/2 comes only from the
+     double-angle identity. The 1/2 used in Vee to avoid double counting
+     the energy cancels on differentiation (grad_Vee already uses 1).
+   - Commit a856ff9 fixed this for the Coulomb branch of setup_eom only.
+     The Yukawa branch of setup_eom and both branches of
+     setup_eom_coupled_lc still used 1/4, halving the interaction stiffness.
+   - Impact: mode frequencies / cavity shifts computed with screening on,
+     or with the coupled-LC model, were wrong. Symptoms for 2 electrons in
+     a parabolic trap: rotation mode at 0.707 f_com instead of 0, breathing
+     mode at sqrt(2) f_com instead of sqrt(3) f_com.
+
+2. Coulomb vs. Yukawa choice in the EOM now also honours include_screening
+   Files: quantum_electron/eom_solver.py
+   - Previously the EOM only checked screening_length == np.inf, while the
+     position solver checks include_screening. With include_screening=False
+     and a finite screening_length, positions used Coulomb but modes used
+     Yukawa. Now: Coulomb if (not include_screening) or length is inf.
+
+3. Fixed crash in parallel_perturb_and_solve on NumPy >= 1.24
+   Files: quantum_electron/position_solver.py
+   - np.int -> int in single_thread (np.int was removed from NumPy).
+   - multiprocessing.Pool is now used as a context manager so it is closed.
+
+4. Added regression tests
+   Files: tests/test_eom.py (new)
+   - Checks the analytic 2-electron spectrum (0, f_com, f_com,
+     sqrt(3) f_com) for setup_eom and setup_eom_coupled_lc (Ltail = 0 and
+     1 nH), for Coulomb and for Yukawa with a very long screening length.
+
+Verification: full pytest suite passes (26 tests) in conda env fem2
+(NumPy 2.4.2). parallel_perturb_and_solve smoke-tested with 6 electrons.
+
+
+Known issues (not yet fixed)
+----------------------------
+- examples/97_transmission_line.ipynb does not run headless (widgets).
+- Periodic boundaries include only the nearest image; for unscreened
+  Coulomb interactions the long-range contribution of other images is
+  neglected (would require an Ewald sum).
