@@ -505,7 +505,7 @@ class PositionSolver:
 
     def single_thread(self, iteration, electron_initial_positions, T, cost_function, minimizer_dict, maximum_dx, maximum_dy):
         xi, yi = r2xy(electron_initial_positions)
-        np.random.seed(np.int(time.time()) + iteration)
+        np.random.seed(int(time.time()) + iteration)
         xi_prime = xi + \
             self.thermal_kick_x(
                 xi, yi, T, maximum_dx=maximum_dx) * np.random.randn(len(xi))
@@ -532,7 +532,6 @@ class PositionSolver:
         """
         electron_initial_positions = solution_data_reference['x']
         best_result = solution_data_reference
-        pool = multiprocessing.Pool()
 
         tasks = []
         iteration = 0
@@ -541,13 +540,14 @@ class PositionSolver:
             tasks.append((iteration, electron_initial_positions, T,
                          cost_function, minimizer_dict, maximum_dx, maximum_dy,))
 
-        results = [pool.apply_async(self.single_thread, t) for t in tasks]
-        for result in results:
-            res = result.get()
+        with multiprocessing.Pool() as pool:
+            results = [pool.apply_async(self.single_thread, t) for t in tasks]
+            for result in results:
+                res = result.get()
 
-            if res['status'] == 0 and res['fun'] < best_result['fun']:
-                # cprint("\tNew minimum was found after perturbing!", "green")
-                best_result = res
+                if res['status'] == 0 and res['fun'] < best_result['fun']:
+                    # cprint("\tNew minimum was found after perturbing!", "green")
+                    best_result = res
 
         # Nothing has changed by perturbing the reference solution
         if (best_result['x'] == solution_data_reference['x']).all():

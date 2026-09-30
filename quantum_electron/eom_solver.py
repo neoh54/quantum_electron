@@ -184,26 +184,26 @@ class EOMSolver:
         # We'll be dividing by rij, so to avoid raising warnings:
         np.fill_diagonal(rij, 1E-15)
 
-        if self.screening_length == np.inf:
+        if (not self.include_screening) or self.screening_length == np.inf:
             # print("Coulomb!")
             # Note that an infinite screening length corresponds to the Coulomb case. Usually it should be twice the
             # helium depth
-            kij_plus = 1 / 4. * q_e ** 2 / \
+            kij_plus = 1 / 2. * q_e ** 2 / \
                 (4 * np.pi * eps0) * (1 + 3 * np.cos(2 * tij)) / rij ** 3
-            kij_minus = 1 / 4. * q_e ** 2 / \
+            kij_minus = 1 / 2. * q_e ** 2 / \
                 (4 * np.pi * eps0) * (1 - 3 * np.cos(2 * tij)) / rij ** 3
-            lij = 1 / 4. * q_e ** 2 / \
+            lij = 1 / 2. * q_e ** 2 / \
                 (4 * np.pi * eps0) * 3 * np.sin(2 * tij) / rij ** 3
         else:
             # print("Yukawa!")
             rij_scaled = rij / self.screening_length
-            kij_plus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_plus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 + (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            kij_minus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_minus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 - (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            lij = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            lij = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (3 + 3 * rij_scaled + rij_scaled ** 2) * np.sin(2 * tij)
 
         np.fill_diagonal(kij_plus, 0)
@@ -296,7 +296,7 @@ class EOMSolver:
         # We'll be dividing by rij, so to avoid raising warnings:
         np.fill_diagonal(rij, 1E-15)
 
-        if self.screening_length == np.inf:
+        if (not self.include_screening) or self.screening_length == np.inf:
             # print("Coulomb!")
             # Note that an infinite screening length corresponds to the Coulomb case. Usually it should be twice the
             # helium depth
@@ -309,13 +309,13 @@ class EOMSolver:
         else:
             # print("Yukawa!")
             rij_scaled = rij / self.screening_length
-            kij_plus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_plus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 + (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            kij_minus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            kij_minus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (1 + rij_scaled + rij_scaled ** 2 - (3 + 3 * rij_scaled + rij_scaled ** 2) * np.cos(
                     2 * tij))
-            lij = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
+            lij = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-rij_scaled) / rij ** 3 * \
                 (3 + 3 * rij_scaled + rij_scaled ** 2) * np.sin(2 * tij)
 
         np.fill_diagonal(kij_plus, 0)
