@@ -1,9 +1,11 @@
 import time
+import pytest
 from quantum_electron import FullModel
 import numpy as np
 from matplotlib import pyplot as plt
 from alive_progress import alive_bar
 
+@pytest.mark.slow
 def test_performance():
     """Tests the performance of the minimization using the FullModel class. 
     We construct a parabolic potential and minimize electron clusters of various sizes.

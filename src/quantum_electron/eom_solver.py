@@ -7,7 +7,6 @@ from typing import List, Dict, Optional
 from matplotlib import pyplot as plt
 import matplotlib.animation as animation
 from matplotlib import patheffects as pe
-from IPython import display
 
 
 class EOMSolver:
@@ -490,15 +489,21 @@ class EOMSolver:
         return animation.FuncAnimation(
             fig=fig, func=update, frames=time_points, interval=frame_interval_ms, repeat=True)
 
-    def show_animation(self, matplotlib_animation) -> display.display:
-        """Display an animation in a jupyter notebook.
+    def show_animation(self, matplotlib_animation) -> None:
+        """Display an animation in a jupyter notebook. Requires IPython.
 
         Args:
             matplotlib_animation (matplotlib.animation.FuncAnimation): animation object, for example from `animate_eigenvectors`
 
         Returns:
-            display.display: looped animation in html format.
+            None: the looped animation is displayed in html format.
         """
+        try:
+            from IPython import display
+        except ImportError as e:
+            raise ImportError("show_animation requires IPython. Install it with `pip install ipython`, "
+                              "or `pip install quantum_electron[notebooks]`.") from e
+
         # converting to an html5 video
         video = matplotlib_animation.to_html5_video()
 

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum_electron"
+dynamic = ["version"]
+description = "Classical simulation of electrons on helium: equilibrium positions and in-plane equations of motion in electrostatic potentials."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Gerwin Koolstra" }]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "shapely>=2.0",
+    "scikit-image",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "alive_progress"]
+# Needed by the example notebooks, FullModel.show_animation (IPython) and utils.select_outer_electrons (pyvista)
+notebooks = ["jupyter", "ipython", "pyvista", "alive_progress", "sympy"]
+
+[project.urls]
+Repository = "https://github.com/gkoolstra/quantum_electron"
+
+[dependency-groups]
+dev = ["pytest", "alive_progress", "flake8", "nbstripout"]
+
+[tool.setuptools.dynamic]
+version = { attr = "quantum_electron._version.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Slow tests are skipped by default. Run them with `pytest -m slow`, or everything with `pytest -m ""`.
+addopts = "-m 'not slow'"
+markers = ["slow: long-running tests (deselected by default)"]

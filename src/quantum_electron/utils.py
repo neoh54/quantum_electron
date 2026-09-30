@@ -1,7 +1,6 @@
 import numpy as np
 from numpy.typing import ArrayLike
 from typing import Dict, Optional, List, Union
-import pyvista
 from shapely import Polygon
 import shapely.plotting
 from matplotlib import pyplot as plt
@@ -30,6 +29,12 @@ def select_outer_electrons(xi: ArrayLike, yi: ArrayLike, plot: bool = True, **kw
     Returns:
         tuple: Polygon points (x and y), polygon area
     """
+    try:
+        import pyvista
+    except ImportError as e:
+        raise ImportError("select_outer_electrons requires pyvista. Install it with `pip install pyvista`, "
+                          "or `pip install quantum_electron[notebooks]`.") from e
+
     # There must be at least 2 electrons to define a surface
     if len(xi) > 2:
         points = np.c_[xi.reshape(-1), yi.reshape(-1),

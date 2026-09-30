@@ -4,6 +4,99 @@ CHANGES
 Newest entries first. Each entry: what changed, why, affected files, how it was verified.
 
 
+2026-09-30  Notebook outputs out of git, slow tests, optional dependencies
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. nbstripout git filter for notebooks
+   - .gitattributes (new): *.ipynb filter=nbstripout, diff=ipynb.
+   - Registered locally with `nbstripout --install --attributes
+     .gitattributes` (nbstripout 0.9.1 installed into conda env fem2). This
+     wrote filter.nbstripout.* and diff.ipynb.textconv to .git/config,
+     pointing at ~/miniconda3/envs/fem2/bin/python, with
+     filter.nbstripout.required = true (git errors if that python or
+     nbstripout goes missing; re-run `nbstripout --install` from another
+     env to repoint it).
+   - Each clone must run `nbstripout --install` once (README, Contributing).
+   - The existing notebooks in the index still contain outputs; they are
+     stripped when next staged. To strip all of them at once:
+     git add --renormalize examples/
+     Stripped sizes: ~10 MB total -> ~265 KB; all stripped notebooks
+     validated with nbformat.
+   - Trade-off: notebooks viewed on GitHub will no longer show plots.
+
+2. Slow tests deselected by default
+   Files: pyproject.toml, tests/test_performance.py
+   - New marker `slow`; addopts = "-m 'not slow'". test_performance (28 s
+     of the 32 s suite) is marked slow. `pytest` now takes ~3 s;
+     `pytest -m slow` / `pytest -m ""` run the slow / all tests.
+   - CI runs everything (`pytest -m ""`), since test_performance also checks
+     convergence up to 400 electrons.
+
+3. Optional dependencies
+   Files: pyproject.toml, src/quantum_electron/utils.py,
+          src/quantum_electron/eom_solver.py, .github/workflows/python-app.yml
+   - Core dependencies: numpy, scipy, matplotlib, shapely>=2.0,
+     scikit-image. Removed from core: pyvista, IPython, alive_progress.
+   - pyvista is imported inside utils.select_outer_electrons, IPython inside
+     EOMSolver.show_animation; both raise ImportError with an install hint
+     when missing. show_animation's return annotation was display.display
+     (needed the module-level import); it returns None.
+   - Extras: test = pytest, alive_progress (test_performance imports it);
+     notebooks = jupyter, ipython, pyvista, alive_progress, sympy.
+     97_transmission_line additionally needs scikit-rf, scqubits,
+     ipywidgets, tqdm (not included).
+   - uv dev group: pytest, alive_progress, flake8, nbstripout.
+   - CI installs ".[test]" (plain "." no longer brings alive_progress).
+   - README: notebooks extra, nbstripout setup, slow tests.
+
+Verification:
+- fem2: `pytest` 42 passed, 1 deselected (2.8 s); `pytest -m slow` 1 passed.
+- Fresh uv venv with core dependencies only: `import quantum_electron`
+  works without pyvista, IPython, alive_progress; select_outer_electrons and
+  show_animation raise the ImportError hints. With ".[test]": 41 passed,
+  1 skipped (zeroheliumkit cross-check), 1 deselected.
+
+
+2026-09-30  src layout and pyproject.toml (pip and uv)
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Moved the package: quantum_electron/ -> src/quantum_electron/
+   - Plain mv (not git mv); git shows it as deletions plus untracked files
+     until staged. Earlier CHANGES entries refer to the old paths.
+   - With the src layout, tests and notebooks always import the installed
+     package, never an accidental copy on the working directory path.
+
+2. pyproject.toml replaces setup.py (deleted)
+   - Build backend setuptools>=64 (PEP 660 editable installs).
+   - Version read from src/quantum_electron/_version.py
+     (tool.setuptools.dynamic), so there is still one place to bump it.
+   - requires-python >= 3.10 (dataclass(slots=True) in coupling_constants).
+   - Dependencies as before, shapely pinned >= 2.0 (top-level
+     `from shapely import Polygon` needs it).
+   - Extra `test` = pytest  ->  pip install -e ".[test]"
+   - Dependency group `dev` = pytest, flake8  ->  installed by `uv sync`
+   - [tool.pytest.ini_options] testpaths = ["tests"].
+
+3. Other files
+   - .github/workflows/python-app.yml: flake8 now lints src/quantum_electron.
+   - README.md: installation with pip or uv, `uv run pytest`.
+   - _version.py: comment updated (setup.py -> pyproject.toml).
+   - Removed the stale, git-ignored quantum_electron.egg-info/ at the repo
+     root (left over from the old setup.py install).
+
+Verification:
+- Fresh uv venv (Python 3.13): `uv pip install -e ".[test]"`, imports from
+  src/, 42 passed, 1 skipped (zeroheliumkit cross-check; zhk not installed).
+- `uv build`: wheel contains all 8 modules.
+- conda env fem2: the old editable install broke with the move
+  (ModuleNotFoundError) and was reinstalled with `pip install -e .`;
+  43 passed. Notebooks 00_potential_inspection and 00_harmonic_well run.
+- Note: the first `uv sync` / `uv run` will create .venv/ (git-ignored) and
+  uv.lock in the repo root.
+
+
 2026-09-30  InitialCondition.random_particles
 --------------------------------------------------------------------------
 (uncommitted)

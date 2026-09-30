@@ -23,12 +23,17 @@ Clone this module in a directory of your choice
 ```
 git clone https://github.com/gkoolstra/quantum_electron.git
 ```
-In a terminal window, change into the cloned directory:
+In a terminal window, change into the cloned directory and install the package (Python 3.10 or newer) in editable mode, either with pip:
 ```
 cd quantum_electron
-pip install -e .
+pip install -e ".[test]"
 ```
-After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
+or with [uv](https://docs.astral.sh/uv/), which creates a virtual environment in `.venv` and installs the package together with the development tools (pytest, flake8, nbstripout):
+```
+cd quantum_electron
+uv sync
+```
+The source code lives in `src/quantum_electron`. To run the example notebooks, also install the `notebooks` extra (Jupyter, IPython for animations, pyvista for `select_outer_electrons`, alive_progress, sympy): `pip install -e ".[notebooks]"` or `uv sync --extra notebooks`. After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
 
 ### Additional packages
 To generate animations, this module relies on `ffmpeg`. On MacOS this can be easily installed using [homebrew](https://formulae.brew.sh/formula/ffmpeg) from the Terminal. On Windows it can be installed using the following [link](https://www.ffmpeg.org/download.html). 
@@ -36,7 +41,7 @@ To generate animations, this module relies on `ffmpeg`. On MacOS this can be eas
 This module also integrates well with the output of the FEM software [ZeroHeliumKit](https://github.com/eeroqlab/zeroheliumkit). Please refer to any dependencies for ZHK on the linked github page.
 
 ## Tests
-To test the performance of the minimization, we're building and expanding a suite of tests based on the `pytest` framework. To run these tests, `cd` into the main module directory and run `pytest`. Currently, we have implemented a test in `test_wigner_molecules.py`, which compares the energy per particle of Wigner molecules in a parabolic confinement to known tabulated values.
+To test the performance of the minimization, we're building and expanding a suite of tests based on the `pytest` framework. To run these tests, `cd` into the main module directory and run `pytest` (or `uv run pytest`). Currently, we have implemented a test in `test_wigner_molecules.py`, which compares the energy per particle of Wigner molecules in a parabolic confinement to known tabulated values.
 
 ## Getting started
 The best way to learn how to use the module is to browse the examples. At a very high level this is the workflow:
@@ -83,6 +88,14 @@ The initial condition can affect the final minimization result quite strongly. W
 
 ## Contributing
 Contributions to this growing repository are welcome. Please feel free to create a fork and create a pull request with your suggested changes.
+
+Notebook outputs are not stored in git. After cloning, register the [nbstripout](https://github.com/kynan/nbstripout) git filter once (it is included in the uv `dev` group, or `pip install nbstripout`):
+```
+nbstripout --install
+```
+The filter strips outputs and execution counts when notebooks are staged; your local copies keep their outputs.
+
+By default `pytest` skips tests marked as slow (`tests/test_performance.py`). Run them with `pytest -m slow`, or everything with `pytest -m ""`.
 
 ## Credit
 If you found this module useful in your research, please consider citing this code in your publication using a hyperlink.
