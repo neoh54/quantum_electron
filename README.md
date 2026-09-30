@@ -28,7 +28,7 @@ In a terminal window, change into the cloned directory and install the package (
 cd quantum_electron
 pip install -e ".[test]"
 ```
-or with [uv](https://docs.astral.sh/uv/), which creates a virtual environment in `.venv` and installs the package together with the development tools (pytest, flake8, nbstripout):
+or with [uv](https://docs.astral.sh/uv/), which creates a virtual environment in `.venv` and installs the package together with the development tools (pytest, ruff, nbstripout):
 ```
 cd quantum_electron
 uv sync

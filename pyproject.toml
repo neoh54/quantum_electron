@@ -27,10 +27,14 @@ notebooks = ["jupyter", "ipython", "pyvista", "alive_progress", "sympy"]
 Repository = "https://github.com/gkoolstra/quantum_electron"
 
 [dependency-groups]
-dev = ["pytest", "alive_progress", "flake8", "nbstripout"]
+dev = ["pytest", "alive_progress", "ruff", "nbstripout"]
 
 [tool.setuptools.dynamic]
 version = { attr = "quantum_electron._version.__version__" }
+
+[tool.ruff]
+# Same maximum line length as the previous flake8 configuration
+line-length = 127
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

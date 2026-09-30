@@ -4,6 +4,56 @@ CHANGES
 Newest entries first. Each entry: what changed, why, affected files, how it was verified.
 
 
+2026-09-30  Rename electron_counter -> full_model; CI with uv, ruff, Python matrix
+--------------------------------------------------------------------------
+(uncommitted)
+
+1. Renamed src/quantum_electron/electron_counter.py -> full_model.py
+   - The module contains FullModel; the old name no longer described it.
+     __init__.py imports from .full_model; `from quantum_electron import
+     FullModel` is unchanged.
+   - electron_counter.py is kept as a small deprecation shim: it re-exports
+     FullModel and emits a DeprecationWarning, so existing
+     `from quantum_electron.electron_counter import FullModel` imports and
+     pickled FullModel objects keep working. Can be deleted in a future
+     release.
+   - Test: tests/test_imports.py (old path works, warns, same class).
+
+2. CI (.github/workflows/python-app.yml) rewritten
+   - Two jobs: `lint` and `test`.
+   - Actions updated: actions/checkout@v3 -> @v7, actions/setup-python@v3
+     replaced by astral-sh/setup-uv@v10 (latest releases: v7.0.1, v10.2.0).
+   - Test matrix: Python 3.10, 3.11, 3.12, 3.13 (fail-fast off); installs
+     with `uv sync --extra test`, runs `uv run pytest -m ""` (includes slow).
+   - Lint: flake8 replaced by ruff (via uvx). Same policy as before: syntax
+     errors / undefined names (E9, F63, F7, F82) fail the build, all other
+     findings are reported only. Now lints tests/ as well as src/.
+   - Baseline (ruff 0.16.9): blocking checks pass; 117 report-only findings,
+     mostly annotation style (UP045/UP006/UP007) and import order (I001),
+     also 14 unused imports (F401) and 7 mutable default arguments (B006).
+   - No uv.lock is committed, so CI resolves the newest versions each run.
+     If uv.lock is committed later, use `uv sync --locked --extra test`.
+
+3. pyproject.toml / README
+   - dev group: flake8 -> ruff. [tool.ruff] line-length = 127 (as flake8).
+   - README lists ruff among the dev tools.
+
+Verification:
+- fem2: 43 passed, 1 deselected.
+- ruff blocking checks pass; workflow YAML parses.
+- Local simulation of the CI test job (copy of the repo in a scratch dir,
+  `uv sync --extra test` + `uv run pytest -m ""`):
+  Python 3.11, 3.12, 3.13: 43 passed, 1 skipped (zeroheliumkit cross-check).
+  Python 3.10: uv resolves scipy 1.15.3 (last release supporting 3.10),
+  whose macOS wheel fails to load on this machine (macOS 27, dyld:
+  "__DATA/__thread_bss has a zero-fill section type"); `import
+  scipy.sparse.linalg` fails on its own, so this is a local macOS/scipy
+  issue, not a code issue, and does not affect CI on ubuntu-latest.
+  Re-run on Python 3.10 with conda-forge scipy 1.10.1 / numpy 1.24.3
+  (throwaway venv on the cad env's interpreter): 43 passed, 1 skipped,
+  which also covers numpy 1.x.
+
+
 2026-09-30  Notebook outputs out of git, slow tests, optional dependencies
 --------------------------------------------------------------------------
 (uncommitted)
