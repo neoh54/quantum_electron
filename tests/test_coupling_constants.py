@@ -5,6 +5,7 @@ from quantum_electron import FullModel, PotentialVisualization, CouplingConstant
 from quantum_electron.initial_condition import InitialCondition
 from quantum_electron.coupling_constants import read_ff_output, to_potential_dict
 from quantum_electron.utils import make_potential
+from helpers import solve
 
 um = 1e-6
 # Non-square grid on purpose: on a square grid, swapping x and y would not raise an error.
@@ -33,7 +34,7 @@ def test_coupling_constants_equal_potential_dict():
     assert np.allclose(fm_cc.V(xs, ys), fm_dict.V(xs, ys))
 
     # A single electron must end up in the well at (0.6, -0.3) um, not at the swapped coordinates.
-    res = fm_cc.get_electron_positions(n_electrons=1, electron_initial_positions=np.array([0.0, 0.0]))
+    res = solve(fm_cc, electron_initial_positions=np.array([0.0, 0.0]))
     assert np.allclose(res['x'], [0.6 * um, -0.3 * um], atol=0.02 * um)
 
     for obj in [PotentialVisualization(cc, voltages), InitialCondition(cc, voltages)]:

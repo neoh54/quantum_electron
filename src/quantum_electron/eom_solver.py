@@ -1,3 +1,4 @@
+"""Equations of motion for the in-plane electron modes, optionally coupled to an LC resonator."""
 import scipy
 import numpy as np
 from .utils import r2xy
@@ -10,6 +11,11 @@ from matplotlib import patheffects as pe
 
 
 class EOMSolver:
+    """Sets up and solves the equations of motion of the in-plane electron modes, optionally coupled to a single LC resonator
+    (setup_eom) or to two coupled LC resonators (setup_eom_coupled_lc). Used as a base class of FullModel, which supplies the
+    electric fields and potential curvatures.
+    """
+
     def __init__(self, Ex: callable, Ey: callable, Ex_up: callable, Ex_down: callable, Ey_up: callable, Ey_down: callable,
                  curv_xx: callable, curv_xy: callable, curv_yy: callable) -> None:
         """Class that sets up the equations of motion in matrix form and solves them.
@@ -275,10 +281,12 @@ class EOMSolver:
         # Row 1 and column 1 only have bare cavity information, and
         # cavity-electron terms
         K[0, 0] = 1 / C
-        K[1:num_electrons + 1, 0] = K[0, 1:num_electrons +
-                                      1] = q_e / C * self.Ex(xe, ye)
-        K[num_electrons + 1:2 * num_electrons + 1, 0] = K[0, num_electrons +
-                                                          1:2 * num_electrons + 1] = q_e / C * self.Ey(xe, ye)
+        # The cavity-electron terms need the RF field. Without a resonator they are cropped below, so they are skipped.
+        if self.num_cavity_modes > 0:
+            K[1:num_electrons + 1, 0] = K[0, 1:num_electrons +
+                                          1] = q_e / C * self.Ex(xe, ye)
+            K[num_electrons + 1:2 * num_electrons + 1, 0] = K[0, num_electrons +
+                                                              1:2 * num_electrons + 1] = q_e / C * self.Ey(xe, ye)
 
         kij_plus = np.zeros((num_electrons, num_electrons))
         kij_minus = np.zeros((num_electrons, num_electrons))

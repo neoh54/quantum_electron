@@ -4,6 +4,7 @@ from quantum_electron import FullModel
 import numpy as np
 from matplotlib import pyplot as plt
 from alive_progress import alive_bar
+from helpers import solve
 
 @pytest.mark.slow
 def test_performance():
@@ -45,7 +46,7 @@ def test_performance():
         for r in range(repetitions):
             for k, n in enumerate(n_electrons):
                 t0 = time.time()
-                res = fm.get_electron_positions(n_electrons=n)
+                res = solve(fm, n)
                 t1 = time.time()
 
                 # Save the solution time in an array

@@ -1,3 +1,4 @@
+"""Helper functions (coordinate conversion, potentials, density analysis) and PotentialVisualization."""
 import numpy as np
 from numpy.typing import ArrayLike
 from typing import Dict, Optional, List, Union
@@ -12,6 +13,7 @@ from .coupling_constants import CouplingConstants, to_potential_dict
 
 
 def package_versions():
+    """Prints the versions of quantum_electron, numpy, scipy and matplotlib."""
     for module in ['quantum_electron', 'numpy', 'scipy', 'matplotlib']:
         globals()[module] = importlib.import_module(module)
         print(globals()[module].__name__, globals()[module].__version__)
@@ -236,6 +238,8 @@ def crop_potential(x: ArrayLike, y: ArrayLike, U: ArrayLike, xrange: tuple, yran
 
 
 class PotentialVisualization:
+    """Plotting of the potential energy landscape and of the electrode coupling constants. Used as a base class of FullModel."""
+
     def __init__(self, potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltages: Dict[str, float]):
         """Class for plotting the potential energy landscape.
 

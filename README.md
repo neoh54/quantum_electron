@@ -46,20 +46,34 @@ To test the performance of the minimization, we're building and expanding a suit
 ## Getting started
 The best way to learn how to use the module is to browse the examples. At a very high level this is the workflow:
 
-To solve for the positions of the electrons, one can now use the following sets of short commands:
+To solve for the positions of the electrons, one can now use the following sets of short commands. Each step stores its result in `f.results`:
 ```
+from shapely import Point
 from quantum_electron import FullModel
 f = FullModel(potential_dict, voltages, **options)
 f.periodic_boundaries = ['x']
 
 N = 58
-initial_condition = f.generate_initial_condition(N)
-init_x, init_y = r2xy(initial_condition)
-    
-res = f.get_electron_positions(n_electrons=N, electron_initial_positions=initial_condition, verbose=False)
+# N electrons at random positions inside a disk of radius 1 micron, at least 0.05 micron apart
+f.generate_initial_condition(N, box=Point(0, 0).buffer(1.0), min_dist=0.05, rng=0)
+f.find_ground_configuration(verbose=False)
 
-f.plot_electron_positions(res)
+res = f.results.minimization_results          # output of scipy.optimize.minimize; f.results.coordinates_final [m]
+f.plot_electron_positions("final")
 ```
+A specific initial condition (e.g. the result of a previous step in a voltage sweep) can be passed directly: `f.find_ground_configuration(electron_initial_positions=r0)`.
+
+The in-plane modes and their coupling to a resonator follow from the final configuration. A `Resonator` describes the resonator mode in a fixed format: its frequency, its capacitance, whether it is a differential (`'diff'`) or single-ended (`'single'`) mode, and its RF electrodes:
+```
+from quantum_electron import Resonator
+resonator = Resonator(frequency=5e9, capacitance=50e-15, mode='diff', electrodes=('res_plus', 'res_min'))
+
+f.compute_spectrum()                                     # f.results.evals [Hz] (ascending), f.results.evecs
+g = f.get_coupling_to_mode(0, resonator)                 # [Hz]
+chi = f.get_susceptibility(resonator, gamma_e=1e6)       # complex susceptibility at the resonator frequency
+df = f.get_frequency_shift(resonator, gamma_e=1e6)       # [Hz], -f_r Re{chi} / 2
+```
+The coupling to mode n is $g_n = c\, e (\vec{E}\cdot\vec{x}_n) / (2\sqrt{m_e C})$ with $c=\sqrt{2}$ for the differential mode, and the susceptibility is $\chi_e(\omega) = \sum_n 4 g_n^2 / (\omega_n^2 - \omega^2 + 2 i \omega \Gamma_n)$, with $2\pi\Delta f \approx -\omega_r \mathrm{Re}\{\chi_e(\omega_r)/2\}$. For the differential mode, $C$ is the capacitance of each node to ground plus twice the capacitance between the nodes.
 
 The first argument of `FullModel` can be a `potential_dict` (electrode names as keys with 2D arrays indexed as `[x, y]`, plus `'xlist'` and `'ylist'` in microns), or a `CouplingConstants` object from ZeroHeliumKit or from this package (attributes `x`, `y` and `data`, with arrays indexed as `[y, x]`). FreeFem `2Dmap` output files, such as those in `examples/fem_data`, can be loaded without ZeroHeliumKit:
 ```
@@ -82,10 +96,10 @@ options = {"include_screening" : True, # Include screening of electron-electron 
 
 ## Units
 Lengths follow one rule:
-- **Meters (SI)** for electron coordinates and everything that is compared to them: electron positions `r = [x0, y0, x1, y1, ...]` (including the initial condition and `res['x']` returned by `get_electron_positions`), `remove_bounds`, `max_x_displacement` / `max_y_displacement`, the bounds of `count_electrons_in_dot`, and the `amplitude` of eigenvector animations. Energies are in eV, gradients in eV/m.
+- **Meters (SI)** for electron coordinates and everything that is compared to them: electron positions `r = [x0, y0, x1, y1, ...]` (including the initial condition, `f.results.coordinates_init` and `f.results.coordinates_final`), `remove_bounds`, `max_x_displacement` / `max_y_displacement`, the bounds of `count_electrons_in_dot`, and the `amplitude` of eigenvector animations. Energies are in eV, gradients in eV/m.
 - **Microns** for everything that refers to the potential map or a plot window: `xlist` / `ylist` (and the `x`, `y` of a `CouplingConstants` object), `coor`, `dxdy`, `loc`, `center`, `barrier_location`, and the shapes and spacings passed to `InitialCondition` (`coor`, `dxdy`, `min_spacing`, `polygon`, `min_dist`).
 
-In the docstrings, every length argument is tagged with its unit, `[m]` or `[microns]`. Arguments that end in `_um` are in microns. For example, `generate_initial_condition(n, radius_um=0.2, center=(0, 0))` places `n` electrons on a circle of radius 0.2 microns around (0, 0) microns; the older `radius` argument (in meters) still works but is deprecated.
+In the docstrings, every length argument is tagged with its unit, `[m]` or `[microns]`. For example, `generate_initial_condition(n, box=Point(0, 0).buffer(0.2), min_dist=0.05)` places `n` electrons in a disk of radius 0.2 microns, at least 0.05 microns apart, and stores their positions in meters.
 
 ## Warnings
 Problems during a calculation are reported as Python warnings rather than printed messages: a `ConvergenceWarning` if the minimization did not converge, and a `QuantumElectronWarning` (the base class) for e.g. removed or out-of-domain electrons. They can be filtered with the standard `warnings` module, for example in a voltage sweep:
@@ -96,7 +110,7 @@ from quantum_electron import ConvergenceWarning, QuantumElectronWarning
 warnings.simplefilter("ignore", QuantumElectronWarning)  # silence all quantum_electron warnings
 warnings.simplefilter("error", ConvergenceWarning)       # or: raise an exception when a minimization does not converge
 ```
-`get_electron_positions(..., suppress_warnings=True)` silences them for a single call.
+`find_ground_configuration(..., suppress_warnings=True)` silences them for a single call.
 
 ## Tips for the initial condition
 The initial condition can affect the final minimization result quite strongly. We encourage you to take a look at the example notebook about initial conditions. If there are issues with convergence you can first check convergence with `f.plot_convergence()`. A good final value for the cost function is ~1-500 eV/m. If the lowest value of the cost function is signifantly higher than this, or if warnings appear, here are some rules of thumb for successful convergence:

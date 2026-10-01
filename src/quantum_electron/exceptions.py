@@ -1,3 +1,6 @@
+"""Warning classes of the quantum_electron package."""
+
+
 class QuantumElectronWarning(UserWarning):
     """Base class for warnings issued by quantum_electron.
 

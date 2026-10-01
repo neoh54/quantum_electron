@@ -1,3 +1,6 @@
+"""Coupling constants of the electrodes: the CouplingConstants container (compatible with zeroheliumkit),
+a reader for FreeFem 2Dmap output files, and conversion to the internal potential_dict.
+"""
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Union
@@ -22,6 +25,7 @@ class CouplingConstants:
 
 
 def flatten(l: list) -> list:
+    """Flattens a list of lists into a single list."""
     return [item for sublist in l for item in sublist]
 
 

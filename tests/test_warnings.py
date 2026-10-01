@@ -2,8 +2,10 @@ import warnings
 import pytest
 import numpy as np
 import scipy.optimize
+import quantum_electron.full_model
 from quantum_electron import FullModel, QuantumElectronWarning, ConvergenceWarning
 from quantum_electron.initial_condition import InitialCondition
+from helpers import solve
 
 um = 1e-6
 
@@ -17,14 +19,14 @@ def make_well(**options) -> FullModel:
 
 @pytest.fixture
 def one_iteration(monkeypatch):
-    """Limit scipy.optimize.minimize to a single iteration, such that the minimization does not converge (status > 0)."""
+    """Limit scipy.optimize.minimize (as used by FullModel) to a single iteration, such that the minimization does not converge."""
     minimize = scipy.optimize.minimize
 
     def limited(*args, **kwargs):
         kwargs['options'] = {**kwargs.get('options', {}), 'maxiter': 1}
         return minimize(*args, **kwargs)
 
-    monkeypatch.setattr(scipy.optimize, "minimize", limited)
+    monkeypatch.setattr(quantum_electron.full_model, "minimize", limited)
 
 
 @pytest.fixture
@@ -37,7 +39,7 @@ def no_progress(monkeypatch):
         calls.append(len(x0) // 2)
         return scipy.optimize.OptimizeResult(x=x0, fun=fun(x0), jac=jac(x0), status=1, success=False, message="forced")
 
-    monkeypatch.setattr(scipy.optimize, "minimize", fake_minimize)
+    monkeypatch.setattr(quantum_electron.full_model, "minimize", fake_minimize)
     return calls
 
 
@@ -50,12 +52,12 @@ def test_convergence_warning(one_iteration):
     r0 = np.array([0.5, 0.5, -0.5, -0.5]) * um
 
     with pytest.warns(ConvergenceWarning, match="did not converge"):
-        res = fm.get_electron_positions(n_electrons=2, electron_initial_positions=r0)
+        res = solve(fm, electron_initial_positions=r0)
     assert res['status'] > 0
 
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        fm.get_electron_positions(n_electrons=2, electron_initial_positions=r0, suppress_warnings=True)
+        solve(fm, electron_initial_positions=r0, suppress_warnings=True)
     assert quantum_electron_warnings(record) == []
 
 
@@ -64,13 +66,13 @@ def test_warnings_can_be_turned_into_errors(one_iteration):
     with warnings.catch_warnings():
         warnings.simplefilter("error", QuantumElectronWarning)
         with pytest.raises(ConvergenceWarning):
-            fm.get_electron_positions(n_electrons=2, electron_initial_positions=np.array([0.5, 0.5, -0.5, -0.5]) * um)
+            solve(fm, electron_initial_positions=np.array([0.5, 0.5, -0.5, -0.5]) * um)
 
 
-def test_initial_condition_mismatch_warning():
+def test_no_initial_condition():
     fm = make_well()
-    with pytest.warns(QuantumElectronWarning, match="does not match n_electrons"):
-        fm.get_electron_positions(n_electrons=3, electron_initial_positions=np.array([0.5, 0.5, -0.5, -0.5]) * um)
+    with pytest.raises(ValueError, match="No initial condition"):
+        fm.find_ground_configuration()
 
 
 @pytest.mark.parametrize("suppress_warnings", [False, True])
@@ -81,7 +83,7 @@ def test_unbound_removal_independent_of_suppress_warnings(no_progress, suppress_
 
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        res = fm.get_electron_positions(n_electrons=3, electron_initial_positions=r0, suppress_warnings=suppress_warnings)
+        res = solve(fm, electron_initial_positions=r0, suppress_warnings=suppress_warnings)
 
     assert len(res['x']) == 4
     # The minimization is restarted with the 2 remaining electrons

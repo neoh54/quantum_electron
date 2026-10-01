@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 from quantum_electron import FullModel
 from scipy.constants import elementary_charge as qe, electron_mass as me
+from helpers import solve
 
 
 def make_model(**options) -> FullModel:
@@ -35,7 +36,7 @@ def test_two_electron_modes(options):
     two degenerate center of mass modes at f_com, the breathing mode at sqrt(3) f_com and the rotation mode at zero.
     """
     fm = make_model(**options)
-    res = fm.get_electron_positions(n_electrons=2)
+    res = solve(fm, 2)
 
     K, M = fm.setup_eom(res['x'], resonator_dict=None)
     freqs, _ = fm.solve_eom(K, M, sort_by_cavity_participation=False)
@@ -51,7 +52,7 @@ def test_two_electron_modes(options):
 def test_two_electron_modes_coupled_lc(options, Ltail):
     """Same as above, but with the far-detuned (~5 GHz vs ~100 GHz) coupled LC resonator included."""
     fm = make_model(**options)
-    res = fm.get_electron_positions(n_electrons=2)
+    res = solve(fm, 2)
 
     resonator_dict = {'La': 20e-9, 'Lb': 20e-9, 'Ca': 50e-15, 'Cb': 50e-15, 'Cdot': 10e-15, 'mode': 'diff', 'Ltail': Ltail}
     K, M = fm.setup_eom_coupled_lc(res['x'], resonator_dict=resonator_dict)
@@ -80,7 +81,7 @@ def test_stiffness_matrix_equals_hessian(options):
     fm = FullModel(potential_dict=potential_dict, voltage_dict={"dot": 1.0},
                    trap_annealing_steps=[], potential_smoothing=1e-9, **options)
     fm.set_rf_interpolator(rf_electrode_labels=["dot"])
-    r = fm.get_electron_positions(n_electrons=3)['x']
+    r = solve(fm, 3)['x']
     n = len(r) // 2
 
     # Finite difference Hessian of the total energy in J/m^2, reordered to match the EOM: [x0, ..., xn, y0, ..., yn]

@@ -4,6 +4,163 @@ CHANGES
 Newest entries first. Each entry: what changed, why, affected files, how it was verified.
 
 
+2026-10-01  Resonator dataclass; corrected frequency shift; tests, README and
+            notebooks on the new API
+--------------------------------------------------------------------------
+(uncommitted)
+
+Physics (formulas provided by the user):
+  g_n = c e (E . x_n) / (2 sqrt(m_e C)),   c = sqrt(2) for the differential mode
+  chi_e(w) = sum_n 4 g_n^2 / (w_n^2 - w^2 + 2 i w Gamma_n)
+  2 pi delta_f = -w_r Re{chi_e(w_r) / 2}
+In Hz: g_n/2pi, gamma_n = Gamma_n/2pi, chi_e(f) = sum 4 g^2/(f_n^2 - f^2 + 2i f gamma_n).
+
+1. New module src/quantum_electron/resonator.py: Resonator (frozen dataclass)
+   - frequency [Hz], capacitance [F], mode ('diff' | 'single', required, no
+     default), electrodes (RF electrodes: (plus, minus) or (signal,)).
+   - capacitance for 'diff' is C_d = capacitance of each node to ground plus
+     twice the capacitance between the nodes (Ca + 2 Cdot in the symmetric
+     coupled LC model); for 'single' the LC capacitance.
+   - mode_factor: sqrt(2) for 'diff', 1 for 'single'. Validates mode,
+     positive values, number of electrodes. Exported from quantum_electron.
+
+2. FullModel (src/quantum_electron/full_model.py)
+   - get_coupling_to_mode(mode_id, resonator) [Hz]: g_n with the sqrt(2) from
+     the resonator mode (was hard-coded). Vectorized field evaluation.
+     Raises ValueError if the eigenvectors contain the cavity coordinate
+     (compute_spectrum(resonator_dict=...)), instead of a shape error.
+   - New get_susceptibility(resonator, gamma_e, frequency=None): complex
+     chi_e, at f_r or on an array of frequencies; gamma_e scalar or per mode.
+   - get_frequency_shift(resonator, gamma_e) and
+     get_frequency_shift_from_single_mode(mode_id, resonator, gamma_e):
+     delta_f = -f_r Re{chi_e(f_r)}/2. FIXED SIGN (was +). The damping enters
+     as 2 i f_r gamma_e (was a real term, so np.real() had no effect).
+   - The RF field is set from resonator.electrodes (set_rf_interpolator is
+     only re-run when the electrodes change; set_rf_interpolator now
+     records them in self.rf_electrode_labels and no longer modifies the
+     list passed to it).
+   - Mode frequencies that are nan (zero modes, unstable configuration) are
+     treated as 0 Hz with a QuantumElectronWarning (they made the total nan).
+   - find_ground_configuration raises ValueError when there is no initial
+     condition (instead of failing inside scipy).
+   - plot_electron_positions raises ValueError for an unknown state (printed
+     a message, then raised UnboundLocalError).
+
+3. EOMSolver.setup_eom (src/quantum_electron/eom_solver.py)
+   - Without a resonator, the cavity-electron terms (which need the RF field)
+     are skipped; they were computed and then cropped. Same result, but
+     compute_spectrum() no longer requires set_rf_interpolator.
+
+Verification against the exact models of the package (tests/test_resonator.py):
+   - Differential: setup_eom_coupled_lc(mode='diff'), Ca = Cb, 1 and 2
+     electrons, Cdot = 1e-17 and 1e-15 F: get_frequency_shift with
+     C_d = Ca + 2 Cdot agrees within 2e-3 (ratio 1.000), and is negative.
+     Before: ratio -1 (sign) at small Cdot, drifting by 2 Cdot/C.
+   - Single-ended: setup_eom + get_cavity_frequency_shift, f_r = 5 GHz
+     (below the electron modes: negative) and 20 GHz (above: positive).
+   - sqrt(2) between 'diff' and 'single'; susceptibility (real part = shift,
+     Im < 0 with damping, sum of single modes, frequency arrays, per-mode
+     gamma); RF field from electrodes; error cases.
+
+4. Tests migrated to the stateful API
+   - tests/helpers.py: ring_initial_condition (the deterministic ring of
+     radius 0.18 um around the minimum that get_electron_positions used by
+     default) and solve(); existing tests keep testing the same thing.
+   - test_warnings: minimize is patched in quantum_electron.full_model (the
+     refactor imports it directly); the n_electrons mismatch test is
+     replaced by a test for the missing-initial-condition error.
+   - test_initial_condition: radius_um test replaced by a test of the new
+     generate_initial_condition (box, min_dist, results, seed).
+
+5. README and notebooks
+   - README: Getting started shows generate_initial_condition ->
+     find_ground_configuration -> results, and the Resonator / coupling /
+     susceptibility / shift workflow with the formulas; Units and Warnings
+     sections updated.
+   - Notebooks 00-06: get_electron_positions(...) ->
+     find_ground_configuration(...) + res = fm.results.minimization_results;
+     plot_electron_positions(res, ...) -> plot_electron_positions("final", ...).
+     Calls that relied on the old default ring now call
+     generate_initial_condition(n, box=Point(minimum).buffer(0.2),
+     min_dist=0.01, rng=0): random (seeded) positions in a disk of radius
+     0.2 um around the potential minimum. Explicit initial conditions are
+     unchanged. Imports added where needed. Commented-out code in 05 cell 47
+     left as is.
+
+Verification: fem2, 63 passed, 1 deselected; slow test passes; ruff
+blocking checks pass. Notebooks 00, 01, 02, 03 (cell 21 sweep reduced to
+4 voltages x 10 electron numbers in the scratch copy; this also verifies the
+earlier cell-21 fix), 04, 05, 06 run end to end, with no ConvergenceWarning
+or QuantumElectronWarning in any output.
+Random (seeded) start vs the old ring start, Wigner molecules as in
+00_harmonic_well (E/(n E0)): n = 5, 9, 15, 25 identical; n = 6: the ring
+ended in a metastable state (2.82476), the random start finds the ground
+state (2.80456, Bedanov & Peeters).
+
+
+2026-10-01  Docstrings for the new stateful FullModel API
+--------------------------------------------------------------------------
+(uncommitted; documentation only, on top of the user's uncommitted refactor
+of src/quantum_electron/full_model.py)
+
+Context: the user's refactor makes FullModel stateful. Results are stored in
+FullModel.results (new dataclass Results): generate_initial_condition(n,
+box, min_dist) -> find_ground_configuration() (replaces
+get_electron_positions) -> compute_spectrum() -> get_coupling_to_mode /
+get_frequency_shift; plot_electron_positions(state) and
+plot_eigenvector(mode_id) read from self.results.
+
+1. Docstrings added
+   - full_model.py: module docstring with the workflow; Results (all
+     fields, units); FullModel class; compute_spectrum,
+     get_coupling_to_mode, get_frequency_shift_from_single_mode,
+     get_frequency_shift (formulas as implemented, units, required call
+     order, resonator_dict keys 'C'/'fr' vs 'f0'/'Z0'), plot_eigenvector.
+   - Module docstrings for all modules; class docstrings for EOMSolver,
+     PositionSolver, ConvergenceMonitor, PotentialVisualization; function
+     docstrings for thermal_kick_x/y, single_thread, package_versions,
+     flatten. (The inner update() closures of the animations are left
+     without docstrings.)
+
+2. Docstrings updated to the new API
+   - FullModel.__init__: usage example uses the new workflow; all arguments
+     documented (include_screening, screening_length, potential_smoothing,
+     remove_unbound_electrons, trap_annealing_steps, max_x/y_displacement
+     were missing).
+   - generate_initial_condition: box/min_dist/kwargs, returns None, stores
+     in results (said "circular, returns array").
+   - find_ground_configuration: returns None, stores in results (said
+     returns dict).
+   - plot_electron_positions: state argument (documented the removed res).
+   - count_electrons_in_dot: returns int, side effect on results.num_final.
+   - plot_convergence and the InitialCondition example: no longer refer to
+     get_electron_positions.
+
+Verification: code identical apart from docstrings (syntax trees with
+docstrings stripped compared against HEAD for all other modules; for
+full_model.py all remaining code differences are the user's refactor).
+Package imports; ruff blocking checks pass.
+
+Found while documenting (NOT changed; see the discussion):
+- get_frequency_shift = -2 x the exact result of the package's own coupled
+  EOM (setup_eom + get_cavity_frequency_shift), confirmed by 2nd-order
+  perturbation theory (1 electron, uniform RF field, f_x = 13.3 GHz,
+  f_r = 5 GHz: +0.0004 vs -0.0002 MHz). Wrong sign, factor 2.
+- get_coupling_to_mode returns e E u / (2 pi sqrt(2 m C)) = sqrt(2) x the
+  on-resonance vacuum Rabi coupling e E u / (4 pi sqrt(m C)); comment says
+  MHz, returns Hz.
+- gamma_e enters the denominator as a real term (+2 f_r gamma_e), so
+  np.real() has no effect; a damping term is normally imaginary.
+- plot_electron_positions(state="fnal") prints a message, then raises
+  UnboundLocalError.
+- compute_spectrum(resonator_dict=...) followed by get_coupling_to_mode
+  raises a shape mismatch (eigenvectors contain the cavity row).
+- get_frequency_shift is nan if any mode frequency is nan (zero modes).
+- Tests: 34 of 51 fail, all because they still call the removed
+  get_electron_positions (33) or the old generate_initial_condition (1);
+  no physics failures. README and notebooks also use the old API.
+
+
 2026-09-30  Units: documented convention, radius_um
 --------------------------------------------------------------------------
 (uncommitted)
@@ -290,8 +447,8 @@ Verification: full pytest suite passes (43 tests) in conda env fem2.
 Only these source lines changed; stored outputs are untouched.
 
 Verification (scratch copies, fem2 env): 98_electron_capacitance now runs
-end to end. 03_periodic_boundaries not yet re-verified (run stopped at the
-user's request; to be checked after upcoming changes).
+end to end. 03_periodic_boundaries verified on 2026-10-01 (see the entry
+"Resonator dataclass; ...").
 
 
 2026-09-30  FullModel accepts CouplingConstants; FreeFem 2Dmap reader

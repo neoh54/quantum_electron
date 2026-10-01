@@ -1,3 +1,6 @@
+"""Energy minimization of electron positions: cost function (electrostatic plus electron-electron energy), its gradient,
+periodic boundary conditions, thermal annealing, and a convergence monitor.
+"""
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.optimize import minimize
@@ -12,6 +15,10 @@ from numpy.typing import ArrayLike
 
 
 class ConvergenceMonitor:
+    """Callback for scipy.optimize.minimize that records (and optionally prints) the cost function, the norm of the gradient
+    and the electron positions at every call_every-th iteration. Used by FullModel.find_ground_configuration (attribute CM).
+    """
+
     def __init__(self, Uopt: callable, grad_Uopt: callable, call_every: int, Uext: Optional[callable] = None,
                  xext: Optional[ArrayLike] = None, yext: Optional[ArrayLike] = None, verbose: bool = True, eps: float = 1E-12, save_path: Optional[str] = None,
                  figsize: tuple = (6.5, 3.), coordinate_transformation: Optional[callable] = None, clim: tuple = (-0.75, 0)) -> None:
@@ -125,6 +132,10 @@ class ConvergenceMonitor:
 
 
 class PositionSolver:
+    """Cost function and gradient for minimizing the total energy of N electrons: the electrostatic energy from a spline
+    interpolation of the potential, plus the (optionally screened) electron-electron interaction. Supports periodic boundary
+    conditions (self.periodic_boundaries) and thermal annealing (perturb_and_solve). Used as a base class of FullModel.
+    """
 
     def __init__(self, grid_data_x: ArrayLike, grid_data_y: ArrayLike, potential_data: ArrayLike, spline_order_x: int = 3, spline_order_y: int = 3,
                  smoothing: float = 0, include_screening: bool = True, screening_length: float = np.inf) -> None:
@@ -460,6 +471,17 @@ class PositionSolver:
         return gradient
 
     def thermal_kick_x(self, x: ArrayLike, y: ArrayLike, T: float, maximum_dx: Optional[float] = None) -> float:
+        """Thermal displacement amplitude in the x-direction, sqrt(2 k_B T / k_x), where k_x = |e d^2V/dx^2| is the local trap stiffness.
+
+        Args:
+            x (ArrayLike): [m] 1D array of electron positions (x-coordinate)
+            y (ArrayLike): [m] 1D array of electron positions (y-coordinate)
+            T (float): [K] Temperature.
+            maximum_dx (Optional[float], optional): [m] Upper limit of the displacement. Defaults to None (no limit).
+
+        Returns:
+            ArrayLike: [m] Displacement amplitude for each electron.
+        """
         ktrapx = np.abs(q_e * self.ddVdx(x, y))
         ret = np.sqrt(2 * kB * T / ktrapx)
         if maximum_dx is not None:
@@ -469,6 +491,17 @@ class PositionSolver:
             return ret
 
     def thermal_kick_y(self, x: ArrayLike, y: ArrayLike, T: float, maximum_dy: Optional[float] = None) -> float:
+        """Thermal displacement amplitude in the y-direction, sqrt(2 k_B T / k_y), where k_y = |e d^2V/dy^2| is the local trap stiffness.
+
+        Args:
+            x (ArrayLike): [m] 1D array of electron positions (x-coordinate)
+            y (ArrayLike): [m] 1D array of electron positions (y-coordinate)
+            T (float): [K] Temperature.
+            maximum_dy (Optional[float], optional): [m] Upper limit of the displacement. Defaults to None (no limit).
+
+        Returns:
+            ArrayLike: [m] Displacement amplitude for each electron.
+        """
         ktrapy = np.abs(q_e * self.ddVdy(x, y))
         ret = np.sqrt(2 * kB * T / ktrapy)
         if maximum_dy is not None:
@@ -478,6 +511,20 @@ class PositionSolver:
             return ret
 
     def single_thread(self, iteration, electron_initial_positions, T, cost_function, minimizer_dict, maximum_dx, maximum_dy):
+        """One perturbation for parallel_perturb_and_solve: apply a random thermal kick to the electron positions and minimize again.
+
+        Args:
+            iteration (int): Index of the perturbation, used to seed the random number generator of this process.
+            electron_initial_positions (ArrayLike): [m] Electron positions [x0, y0, x1, y1, ...] to perturb.
+            T (float): [K] Temperature of the thermal kick.
+            cost_function (callable): Cost function to minimize, e.g. Vtotal.
+            minimizer_dict (dict): Keyword arguments for scipy.optimize.minimize.
+            maximum_dx (Optional[float]): [m] Maximum kick in the x-direction.
+            maximum_dy (Optional[float]): [m] Maximum kick in the y-direction.
+
+        Returns:
+            dict: Output of scipy.optimize.minimize.
+        """
         xi, yi = r2xy(electron_initial_positions)
         np.random.seed(int(time.time()) + iteration)
         xi_prime = xi + \

@@ -1,3 +1,4 @@
+"""Initial conditions (electron positions) for the minimization in FullModel."""
 import numpy as np
 import warnings
 from shapely import Polygon
@@ -21,7 +22,7 @@ class InitialCondition:
     init_cond = ic.make_by_chemical_potential(max_electrons, chemical_potential, min_spacing)
 
     f = FullModel(potential_dict, voltage_dict)
-    f.get_electron_positions(n_electrons=len(init_cond) // 2, initial_condition=init_cond)
+    f.find_ground_configuration(electron_initial_positions=init_cond)
     """
 
     def __init__(self, potential_dict: Union[Dict[str, ArrayLike], CouplingConstants], voltage_dict: Dict[str, ArrayLike]):

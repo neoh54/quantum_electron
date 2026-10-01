@@ -1,4 +1,4 @@
-# Deprecated module name: FullModel now lives in quantum_electron.full_model.
+"""Deprecated module name: FullModel now lives in quantum_electron.full_model."""
 # This module is kept so that existing imports (and pickled FullModel objects) keep working.
 import warnings
 from .full_model import FullModel  # noqa: F401

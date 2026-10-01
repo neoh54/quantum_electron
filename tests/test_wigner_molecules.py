@@ -3,6 +3,7 @@ from quantum_electron import FullModel
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.constants import elementary_charge as qe, epsilon_0 as eps0
+from helpers import solve
 
 input_output_pairs = [(1, 0.0000), (2, 0.75000), (3, 1.31037), (4, 1.83545), 
                       (5, 2.33845), (6, 2.80456), (7, 3.23897), (8, 3.66890), 
@@ -45,7 +46,7 @@ def test_molecule_energies(n: int, expected: float):
 
     fm = FullModel(potential_dict=potential_dict, voltage_dict=voltages, trap_annealing_steps=[20]*10, potential_smoothing=1e-7)
             
-    res = fm.get_electron_positions(n_electrons=n, electron_initial_positions=None)
+    res = solve(fm, n)
     E_N = res['fun'] * qe / (n * E0)
 
     # We'll allow an uncertainty of +/- 1e-5 in the energy.
